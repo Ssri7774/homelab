@@ -1,0 +1,35 @@
+USER-SUPPLIED VALUES:
+config:
+  host: n8n.192.168.4.140.nip.io
+  timezone: Australia/Melbourne
+database:
+  type: sqlite
+  useExternal: false
+extraEnv:
+  N8N_HOST:
+    value: n8n.192.168.4.140.nip.io
+  N8N_SECURE_COOKIE:
+    value: "false"
+  WEBHOOK_URL:
+    value: http://n8n.192.168.4.140.nip.io
+ingress:
+  annotations:
+    kubernetes.io/ingress.class: traefik
+  enabled: true
+  hosts:
+  - host: n8n.192.168.4.140.nip.io
+    paths:
+    - path: /
+      pathType: Prefix
+persistence:
+  accessMode: ReadWriteOnce
+  enabled: true
+  size: 5Gi
+  storageClass: local-path
+queueMode:
+  enabled: false
+redis:
+  enabled: false
+secretRefs:
+  env:
+    N8N_ENCRYPTION_KEY: your_64_char_hex_string
