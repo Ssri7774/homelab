@@ -38,4 +38,5 @@ spec:
                           - name: N8N_HOST
                             value: "n8n.192.168.4.140.nip.io"
                           - name: WEBHOOK_URL
+                            $patch: replace
                             value: "http://n8n.192.168.4.140.nip.io/"
