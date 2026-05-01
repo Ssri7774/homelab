@@ -1,0 +1,13 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cluster-apps
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./apps
+  prune: true # This tells Flux to delete things if you remove them from Git
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
