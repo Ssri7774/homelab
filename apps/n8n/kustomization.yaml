@@ -2,15 +2,16 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: n8n
 
-# 1. Pull and render the Helm chart using your exported values
-helmCharts:
-  - name: n8n
-    repo: oci://ghcr.io/n8n-io/n8n-helm-chart
-    version: 1.0.0 # Replace with your version from 'helm ls -A' if different
-    releaseName: n8n
-    namespace: n8n
-    valuesFile: n8n-values.yaml
+resources:
+  - helmrepository.yaml
+  - helmrelease.yaml
 
-# 2. Smash the custom variables into the rendered chart
-patches:
-  - path: patch-n8n-env.yaml
+# Prevent Kustomize from adding random hashes to the ConfigMap name
+generatorOptions:
+  disableNameSuffixHash: true
+
+# Convert your existing values file into a ConfigMap dynamically
+configMapGenerator:
+  - name: n8n-values-config
+    files:
+      - values.yaml=n8n-values.yaml

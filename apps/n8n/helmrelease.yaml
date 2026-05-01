@@ -1,0 +1,41 @@
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: n8n
+  namespace: n8n
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: n8n
+      version: "1.0.0" 
+      sourceRef:
+        kind: HelmRepository
+        name: n8n-oci
+  valuesFrom:
+    - kind: ConfigMap
+      name: n8n-values-config
+      valuesKey: values.yaml
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: n8n-main
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: n8n-main
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: n8n-main
+                        env:
+                          - name: N8N_SECURE_COOKIE
+                            value: "false"
+                          - name: N8N_HOST
+                            value: "n8n.192.168.4.140.nip.io"
+                          - name: WEBHOOK_URL
+                            value: "http://n8n.192.168.4.140.nip.io/"
