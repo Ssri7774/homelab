@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: vault-ui
+  name: vault-vault-ui
   namespace: vault
 spec:
   ingressClassName: traefik
@@ -13,6 +13,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: vault-ui
+                name: vault-vault-ui
                 port:
                   number: 8200
