@@ -1,23 +1,23 @@
 USER-SUPPLIED VALUES:
 config:
-  host: n8n.192.168.4.140.nip.io
+  host: n8n.whatsoever.au
   timezone: Australia/Melbourne
 database:
   type: sqlite
   useExternal: false
 extraEnv:
   N8N_HOST:
-    value: n8n.192.168.4.140.nip.io
+    value: n8n.whatsoever.au
   N8N_SECURE_COOKIE:
     value: "false"
   WEBHOOK_URL:
-    value: http://n8n.192.168.4.140.nip.io
+    value: http://n8n.whatsoever.au
 ingress:
   annotations:
     kubernetes.io/ingress.class: traefik
   enabled: true
   hosts:
-  - host: n8n.192.168.4.140.nip.io
+  - host: n8n.whatsoever.au
     paths:
     - path: /
       pathType: Prefix
