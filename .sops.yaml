@@ -1,0 +1,6 @@
+creation_rules:
+  # Encrypt all YAML files...
+  - path_regex: .*.yaml
+    # ...but ONLY encrypt the values under 'data' or 'stringData'
+    encrypted_regex: ^(data|stringData)$
+    age: age10nyuujs2rkpfu20m42cgz3pqu5nk2lyc8fnyj3ypmm2vqdjueqcsjulsan
