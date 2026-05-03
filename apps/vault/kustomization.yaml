@@ -5,3 +5,4 @@ namespace: flux-system
 resources:
   - helmrepository.yaml
   - helmrelease.yaml
+  - ingress.yaml
