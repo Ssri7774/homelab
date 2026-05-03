@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: technitium
+  namespace: flux-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: technitium
+  template:
+    metadata:
+      labels:
+        app: technitium
+    spec:
+      containers:
+        - name: technitium
+          image: technitium/dns-server:latest
+          ports:
+            - containerPort: 53
+              protocol: UDP
+            - containerPort: 53
+              protocol: TCP
+            - containerPort: 5380
+              protocol: TCP
+          env:
+            - name: TZ
+              value: "Australia/Melbourne"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/dns
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: technitium-config
