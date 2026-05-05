@@ -17,3 +17,4 @@ spec:
     createNamespace: true
   values:
     installCRDs: true
+    fullnameOverride: "external-secrets"
