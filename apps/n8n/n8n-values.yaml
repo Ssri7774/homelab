@@ -30,6 +30,3 @@ queueMode:
   enabled: false
 redis:
   enabled: false
-secretRefs:
-  env:
-    N8N_ENCRYPTION_KEY: your_64_char_hex_string
