@@ -5,6 +5,7 @@ namespace: n8n
 resources:
   - helmrepository.yaml
   - helmrelease.yaml
+  - externalsecret.yaml
 
 # Prevent Kustomize from adding random hashes to the ConfigMap name
 generatorOptions:
