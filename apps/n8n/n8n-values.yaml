@@ -30,3 +30,5 @@ queueMode:
   enabled: false
 redis:
   enabled: false
+secretRefs:
+  existingSecret: n8n-vault-auth
