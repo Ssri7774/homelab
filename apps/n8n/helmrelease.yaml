@@ -33,6 +33,11 @@ spec:
                     containers:
                       - name: n8n-main
                         env:
+                          - name: N8N_ENCRYPTION_KEY
+                            valueFrom:
+                              secretKeyRef:
+                                name: n8n-vault-auth
+                                key: N8N_ENCRYPTION_KEY
                           - name: N8N_SECURE_COOKIE
                             value: "false"
                           - name: N8N_HOST
