@@ -6,3 +6,4 @@ resources:
   - technitium
   - vault
   - external-secrets
+  - milvus-operator
