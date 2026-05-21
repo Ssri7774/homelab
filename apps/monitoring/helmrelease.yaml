@@ -20,7 +20,7 @@ spec:
         enabled: true
         ingressClassName: traefik
         hosts:
-          - grafana.192.168.4.140.nip.io
+          - grafana.whatsoever.au
     prometheus:
       prometheusSpec:
         retention: 7d
