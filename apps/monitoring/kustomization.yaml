@@ -7,3 +7,4 @@ resources:
   - helmrelease.yaml
   - traefik-servicemonitor.yaml
   - slo-rules.yaml
+  - grafana-slo-dashboard.yaml
