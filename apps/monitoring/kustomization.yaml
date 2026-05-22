@@ -9,3 +9,5 @@ resources:
   - slo-rules.yaml
   - grafana-slo-dashboard.yaml
   - alertmanager-secret.yaml
+  - alertmanager-config.yaml
+
