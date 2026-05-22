@@ -1,0 +1,27 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: slo-rules
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: slo.n8n
+      interval: 30s
+      rules:
+        - record: slo:n8n:availability
+          expr: |
+            sum(rate(traefik_service_requests_total{exported_service="n8n-n8n-main-5678@kubernetes", code=~"2..|3.."}[5m]))
+            /
+            sum(rate(traefik_service_requests_total{exported_service="n8n-n8n-main-5678@kubernetes"}[5m]))
+
+        - alert: n8nAvailabilityBreached
+          expr: slo:n8n:availability < 0.995
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "n8n SLO breached"
+            description: "n8n availability is {{ $value | humanizePercentage }}, below 99.5% SLO"
+
