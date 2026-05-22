@@ -1,34 +1,24 @@
-apiVersion: v1
-kind: Secret
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
 metadata:
-  name: alertmanager-kube-prometheus-stack-alertmanager
+  name: slack-config
   namespace: monitoring
-stringData:
-  alertmanager.yaml: |
-    global:
-      resolve_timeout: 5m
-    route:
-      group_by: ["alertname"]
-      group_wait: 30s
-      group_interval: 5m
-      repeat_interval: 1h
-      receiver: slack
-      routes:
-        - receiver: "null"
-          matchers:
-            - alertname = "Watchdog"
-    receivers:
-      - name: "null"
-      - name: slack
-        slack_configs:
-          - api_url_secret:
-              name: alertmanager-slack-secret
-              key: slack_webhook
-            channel: "#alerts"
-            title: '{{ .GroupLabels.alertname }}'
-            text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
-    inhibit_rules:
-      - source_matchers: [severity="critical"]
-        target_matchers: [severity="warning"]
-        equal: [alertname]
+  labels:
+    alertmanagerConfig: slack
+spec:
+  route:
+    receiver: slack
+    groupBy: ["alertname"]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 1h
+  receivers:
+    - name: slack
+      slackConfigs:
+        - apiURL:
+            name: alertmanager-slack-secret
+            key: slack_webhook
+          channel: "#alerts"
+          title: '{{ .GroupLabels.alertname }}'
+          text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
 
