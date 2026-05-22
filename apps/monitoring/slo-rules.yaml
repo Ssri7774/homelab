@@ -7,21 +7,57 @@ metadata:
     release: kube-prometheus-stack
 spec:
   groups:
-    - name: slo.n8n
+    - name: slo.n8n.recording
       interval: 30s
       rules:
-        - record: slo:n8n:availability
+        # Base error ratio (1 = 100% errors, 0 = 0% errors)
+        - record: slo:n8n:error_ratio
           expr: |
-            sum(rate(traefik_service_requests_total{exported_service="n8n-n8n-main-5678@kubernetes", code=~"2..|3.."}[5m]))
+            1 - (
+              sum(rate(traefik_service_requests_total{exported_service="n8n-n8n-main-5678@kubernetes", code=~"2..|3.."}[5m]))
+              /
+              sum(rate(traefik_service_requests_total{exported_service="n8n-n8n-main-5678@kubernetes"}[5m]))
+            )
+
+        # Burn rates over multiple windows
+        - record: slo:n8n:burnrate5m
+          expr: |
+            sum(rate(traefik_service_requests_total{exported_service="n8n-n8n-main-5678@kubernetes", code!~"2..|3.."}[5m]))
             /
             sum(rate(traefik_service_requests_total{exported_service="n8n-n8n-main-5678@kubernetes"}[5m]))
+            / 0.005
 
-        - alert: n8nAvailabilityBreached
-          expr: slo:n8n:availability < 0.995
-          for: 5m
+        - record: slo:n8n:burnrate1h
+          expr: |
+            sum(rate(traefik_service_requests_total{exported_service="n8n-n8n-main-5678@kubernetes", code!~"2..|3.."}[1h]))
+            /
+            sum(rate(traefik_service_requests_total{exported_service="n8n-n8n-main-5678@kubernetes"}[1h]))
+            / 0.005
+
+        - record: slo:n8n:burnrate6h
+          expr: |
+            sum(rate(traefik_service_requests_total{exported_service="n8n-n8n-main-5678@kubernetes", code!~"2..|3.."}[6h]))
+            /
+            sum(rate(traefik_service_requests_total{exported_service="n8n-n8n-main-5678@kubernetes"}[6h]))
+            / 0.005
+
+    - name: slo.n8n.alerts
+      rules:
+        - alert: n8nErrorBudgetBurn
+          expr: slo:n8n:burnrate1h > 14.4 and slo:n8n:burnrate5m > 14.4
+          for: 2m
           labels:
             severity: critical
           annotations:
-            summary: "n8n SLO breached"
-            description: "n8n availability is {{ $value | humanizePercentage }}, below 99.5% SLO"
+            summary: "n8n burning error budget fast"
+            description: "n8n will exhaust its 30-day error budget in ~2 days at current rate"
+
+        - alert: n8nErrorBudgetBurn
+          expr: slo:n8n:burnrate6h > 6 and slo:n8n:burnrate1h > 6
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "n8n burning error budget"
+            description: "n8n will exhaust its 30-day error budget in ~5 days at current rate"
 
