@@ -10,4 +10,5 @@ resources:
   - grafana-slo-dashboard.yaml
   - alertmanager-secret.yaml
   - alertmanager-config.yaml
+  - grafana-secret.yaml
 

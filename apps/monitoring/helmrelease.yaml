@@ -15,7 +15,9 @@ spec:
         namespace: monitoring
   values:
     grafana:
-      adminPassword: "homelab123"
+      admin:
+        existingSecret: grafana-admin-secret
+        passwordKey: admin-password
       ingress:
         enabled: true
         ingressClassName: traefik
