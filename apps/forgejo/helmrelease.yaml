@@ -1,0 +1,48 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: forgejo
+      version: "17.x"
+      sourceRef:
+        kind: HelmRepository
+        name: forgejo
+        namespace: forgejo
+  values:
+    postgresql:
+      enabled: false
+    mysql:
+      enabled: false
+    redis:
+      enabled: false
+    gitea:
+      config:
+        repository:
+          ENABLE_PUSH_CREATE_USER: true
+          ENABLE_PUSH_CREATE_ORG: true
+        database:
+          DB_TYPE: sqlite3
+        server:
+          DOMAIN: "forgejo.whatsoever.au"
+          ROOT_URL: "http://forgejo.whatsoever.au/"
+          SSH_DOMAIN: "192.168.4.140"
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: "local-path"
+      accessModes:
+        - ReadWriteOnce
+    ingress:
+      enabled: true
+      className: traefik
+      hosts:
+        - host: forgejo.whatsoever.au
+          paths:
+            - path: /
+              pathType: Prefix
+
