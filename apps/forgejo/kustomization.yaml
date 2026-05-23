@@ -3,6 +3,6 @@ kind: Kustomization
 namespace: forgejo
 resources:
   - namespace.yaml
-  - helmrepository.yaml
   - helmrelease.yaml
+  - ocirepository.yaml
 
