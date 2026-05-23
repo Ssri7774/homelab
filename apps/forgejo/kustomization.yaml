@@ -4,5 +4,5 @@ namespace: forgejo
 resources:
   - namespace.yaml
   - helmrelease.yaml
-  - ocirepository.yaml
+  - helmrepository.yaml
 

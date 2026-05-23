@@ -10,7 +10,7 @@ spec:
       chart: forgejo
       version: "17.x"
       sourceRef:
-        kind: OCIRepository
+        kind: HelmRepository
         name: forgejo
         namespace: forgejo
   values:
