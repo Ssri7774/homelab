@@ -8,4 +8,3 @@ resources:
   - external-secrets
   - milvus-operator
   - monitoring
-  - forgejo
