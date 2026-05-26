@@ -13,4 +13,17 @@ spec:
         kind: HelmRepository
         name: rabbitmq
         namespace: rabbitmq-system
+  values:
+    global:
+      imageRegistry: "docker.io"
+    clusterOperator:
+      image:
+        registry: docker.io
+        repository: rabbitmqoperator/cluster-operator
+        tag: "2.11.0"
+    msgTopologyOperator:
+      image:
+        registry: docker.io
+        repository: rabbitmqoperator/messaging-topology-operator
+        tag: "1.14.0"
 
