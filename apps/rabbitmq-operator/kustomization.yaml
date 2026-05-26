@@ -3,6 +3,5 @@ kind: Kustomization
 namespace: rabbitmq-system
 resources:
   - namespace.yaml
-  - helmrepository.yaml
-  - helmrelease.yaml
+  - https://github.com/rabbitmq/cluster-operator/releases/download/v2.21.0/cluster-operator.yml
 
