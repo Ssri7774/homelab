@@ -15,3 +15,23 @@ spec:
     storageClassName: local-path
     storage: 5Gi
 
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rabbitmq-management
+  namespace: rabbitmq-system
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: rabbitmq.whatsoever.au
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: homelab
+                port:
+                  number: 15672
+
