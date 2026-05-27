@@ -9,3 +9,4 @@ resources:
   - milvus-operator
   - monitoring
   - rabbitmq-operator
+  - rabbitmq
