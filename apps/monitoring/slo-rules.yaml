@@ -61,3 +61,28 @@ spec:
             summary: "n8n burning error budget"
             description: "n8n will exhaust its 30-day error budget in ~5 days at current rate"
 
+    - name: slo.rabbitmq
+      interval: 30s
+      rules:
+        - record: slo:rabbitmq:queue_depth
+          expr: rabbitmq_queue_messages_ready
+
+        - alert: RabbitMQQueueDepthHigh
+          expr: rabbitmq_queue_messages_ready{queue!~".*dead.*"} > 100
+          for: 5m
+          labels:
+            severity: warning
+            namespace: monitoring
+          annotations:
+            summary: "RabbitMQ queue {{ $labels.queue }} is backing up"
+            description: "Queue {{ $labels.queue }} has {{ $value }} unprocessed messages for 5+ minutes"
+
+        - alert: RabbitMQDeadLetterQueueHasMessages
+          expr: rabbitmq_queue_messages_ready{queue=~".*dead.*"} > 0
+          for: 1m
+          labels:
+            severity: critical
+            namespace: monitoring
+          annotations:
+            summary: "Messages in dead letter queue {{ $labels.queue}}"
+            description: "{{ $value }} messages in DLQ {{ $labels.queue}} - processing failures detected"
