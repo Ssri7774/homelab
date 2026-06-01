@@ -9,8 +9,10 @@ spec:
       inCluster:
         values:
           replicaCount: 1
+          containerSecurityContext:
+            runAsUser: 0
           podSecurityContext:
-            fsGroup: 1001
+            fsGroup: 0
           persistence:
             enabled: true
             size: 5Gi
