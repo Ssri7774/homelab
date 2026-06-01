@@ -4,7 +4,6 @@ metadata:
   name: homelab
   namespace: milvus-operator
 spec:
-  mode: cluster
   dependencies:
     etcd:
       inCluster:
