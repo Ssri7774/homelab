@@ -4,6 +4,7 @@ metadata:
   name: homelab
   namespace: milvus-operator
 spec:
+  mode: cluster
   dependencies:
     etcd:
       inCluster:
@@ -17,14 +18,46 @@ spec:
         values:
           components:
             autorecovery: false
-          zookeeper:
-            replicaCount: 1
-          bookkeeper:
-            replicaCount: 1
-          broker:
-            replicaCount: 1
+            functions: false
+            toolset: false
+            pulsar_manager: false
+          monitoring:
+            prometheus: false
+            grafana: false
+            node_exporter: false
+            alert_manager: false
           proxy:
             replicaCount: 1
+            resources:
+              requests:
+                cpu: "0.01"
+                memory: 256Mi
+            configData:
+              PULSAR_MEM: "-Xms256m -Xmx256m"
+          bookkeeper:
+            replicaCount: 2
+            resources:
+              requests:
+                cpu: "0.01"
+                memory: 256Mi
+            configData:
+              PULSAR_MEM: "-Xms256m -Xmx256m -XX:MaxDirectMemorySize=256m"
+          zookeeper:
+            replicaCount: 1
+            resources:
+              requests:
+                cpu: "0.01"
+                memory: 256Mi
+            configData:
+              PULSAR_MEM: "-Xms256m -Xmx256m"
+          broker:
+            replicaCount: 1
+            resources:
+              requests:
+                cpu: "0.01"
+                memory: 256Mi
+            configData:
+              PULSAR_MEM: "-Xms256m -Xmx256m"
     storage:
       inCluster:
         values:
@@ -33,7 +66,6 @@ spec:
             enabled: true
             size: 20Gi
   components:
-    image: milvusdb/milvus:v2.4.0
     resources:
       requests:
         cpu: 100m
