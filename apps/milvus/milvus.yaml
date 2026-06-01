@@ -1,0 +1,42 @@
+apiVersion: milvus.io/v1beta1
+kind: MilvusCluster
+metadata:
+  name: homelab
+  namespace: milvus-operator
+spec:
+  dependencies:
+    etcd:
+      inCluster:
+        values:
+          replicaCount: 1
+          persistence:
+            enabled: true
+            size: 5Gi
+    pulsar:
+      inCluster:
+        values:
+          components:
+            autorecovery: false
+          zookeeper:
+            replicaCount: 1
+          bookkeeper:
+            replicaCount: 1
+          broker:
+            replicaCount: 1
+          proxy:
+            replicaCount: 1
+    storage:
+      inCluster:
+        values:
+          mode: standalone
+          persistence:
+            enabled: true
+            size: 20Gi
+  components:
+    image: milvusdb/milvus:v2.4.0
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+  config: {}
+
