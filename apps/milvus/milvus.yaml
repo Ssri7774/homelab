@@ -6,14 +6,9 @@ metadata:
 spec:
   dependencies:
     etcd:
-      inCluster:
-        values:
-          replicaCount: 1
-          volumePermissions:
-            enabled: true
-          persistence:
-            enabled: true
-            size: 5Gi
+      external: true
+      endpoints:
+        - homelab-etcd.milvus-operator:2379
     pulsar:
       inCluster:
         values:
@@ -60,18 +55,9 @@ spec:
             configData:
               PULSAR_MEM: "-Xms256m -Xmx256m"
     storage:
-      inCluster:
-        values:
-          mode: standalone
-          volumePermissions:
-            enabled: true
-          persistence:
-            enabled: true
-            size: 20Gi
-  components:
-    resources:
-      requests:
-        cpu: 100m
-        memory: 512Mi
-  config: {}
+      external: true
+      type: MinIO
+      endpoint: homelab-minio.milvus-operator:9000
+      secretRef: milvus-minio-secret
+
 
