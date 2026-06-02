@@ -7,7 +7,7 @@ spec:
   interval: 10m
   path: ./apps
   prune: true # This tells Flux to delete things if you remove them from Git
-  wait: true
+  wait: false
   sourceRef:
     kind: GitRepository
     name: flux-system
