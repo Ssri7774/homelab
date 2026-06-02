@@ -9,10 +9,8 @@ spec:
       inCluster:
         values:
           replicaCount: 1
-          containerSecurityContext:
-            runAsUser: 0
-          podSecurityContext:
-            fsGroup: 0
+          volumePermissions:
+            enabled: true
           persistence:
             enabled: true
             size: 5Gi
@@ -65,6 +63,8 @@ spec:
       inCluster:
         values:
           mode: standalone
+          volumePermissions:
+            enabled: true
           persistence:
             enabled: true
             size: 20Gi
