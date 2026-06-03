@@ -11,3 +11,4 @@ resources:
   - rabbitmq-operator
   - rabbitmq
   - milvus
+  - ollama
