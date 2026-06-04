@@ -106,4 +106,4 @@ spec:
             namespace: monitoring
           annotations:
             summary: "GDrive sync stale - script may have crashed"
-            description: "Last sync was {{ humanizeDuration (time() - gdrive_sync_last_run_timestamp) }} ago"
+            description: "GDrive sync has not run in over 5 minutes on hp-master"
