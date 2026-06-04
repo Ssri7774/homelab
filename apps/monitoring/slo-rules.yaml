@@ -86,3 +86,24 @@ spec:
           annotations:
             summary: "Messages in dead letter queue {{ $labels.queue}}"
             description: "{{ $value }} messages in DLQ {{ $labels.queue}} - processing failures detected"
+
+    - name: gdrive.sync
+      rules:
+        - alert: GDriveSyncFailing
+          expr: gdrive_sync_success == 0
+          for: 2m
+          labels:
+            severity: critical
+            namespace: monitoring
+          annotations:
+            summary: "GDrive sync failing on hp-master"
+            description: "rclone bisync has been failing 2+ minutes. Run: rclone config reconnect GDrive:"
+        - alert: GDriveSyncStale
+          expr: (time() - gdrive_sync_last_run_timestamp) > 300
+          for: 1m
+          labels:
+            severity: warning
+            namespace: monitoring
+          annotations:
+            summary: "GDrive sync stale - script may have crashed"
+            description: "Last sync was {{ humanizeDuration (time() - gdrive_sync_last_run_timestamp) }} ago"

@@ -54,3 +54,15 @@ spec:
           hosts:
             - alertmanager.whatsoever.au
 
+    prometheus-node-exporter:
+      extraArgs:
+        - --collector.textfile.directory=/var/lib/node_exporter/textfile_collector
+      extraVolumes:
+        - name: textfile-collector
+          hostPath:
+            path: /var/lib/node_exporter/textfile_collector
+            type: DirectoryOrCreate
+      extraVolumeMounts:
+        - name: textfile-collector
+          mountPath: /var/lib/node_exporter/textfile_collector
+          readOnly: true
