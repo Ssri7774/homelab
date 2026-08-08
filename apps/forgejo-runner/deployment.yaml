@@ -28,17 +28,18 @@ spec:
           args:
             - |
               if [ ! -f /data/.runner ]; then
-                forgejo-runner create-runner-file --connect \
+                forgejo-runner register --no-interactive \
                   --instance "$FORGEJO_URL" \
+                  --token "$RUNNER_TOKEN" \
                   --name "$RUNNER_NAME" \
-                  --secret "$RUNNER_TOKEN"
+                  --labels "docker:docker://catthehacker/ubuntu:act-latest"
               fi
           env:
             - name: FORGEJO_URL
               value: http://forgejo.whatsoever.au/
             - name: RUNNER_NAME
               value: k3s-hp-master-runner
-            - name: RUNNER_TOKEN               # the 40-hex "shared secret" from Forgejo
+            - name: RUNNER_TOKEN               # registration token from Forgejo "Create new runner"
               valueFrom:
                 secretKeyRef:
                   name: forgejo-runner-creds
