@@ -37,7 +37,7 @@ spec:
             - name: FORGEJO_URL
               value: http://forgejo.whatsoever.au/
             - name: RUNNER_NAME
-              value: k3s-hp-master-runner
+              value: k3s-dind-runner
             # Shared secret pre-established on the Forgejo server with
             # `forgejo forgejo-cli actions register --secret <this>`. Stored in
             # Vault at kv/forgejo/runner under `token`.
@@ -82,7 +82,8 @@ spec:
           securityContext:
             privileged: true
           args:
-            - "--host=tcp://0.0.0.0:2375"     # non-TLS, pod-local only
+            - "--host=tcp://0.0.0.0:2375"                    # non-TLS, pod-local only
+            - "--insecure-registry=forgejo.whatsoever.au"    # registry is served over HTTP
           env:
             - name: DOCKER_TLS_CERTDIR
               value: ""
