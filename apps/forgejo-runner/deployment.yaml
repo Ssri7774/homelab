@@ -22,18 +22,23 @@ spec:
         # runs the daemon and executes jobs by talking to the DinD sidecar.
         - name: runner
           image: data.forgejo.org/forgejo/runner:11   # confirm/pin a tag you're happy with
-          # v11 runner: connect the daemon with url + uuid + token (persistent
-          # creds from Forgejo's "Create new runner"). Token is written to a file
-          # so it never appears in the process args.
+          # v11 runner: the connection (url/uuid/token) lives in the config file
+          # under server.connections. Build it at runtime from the Vault-backed
+          # env (keeps the token out of Git and out of the process args), then
+          # append the static runner/container settings from the ConfigMap.
           command: ["/bin/sh", "-ec"]
           args:
             - |
-              echo -n "$RUNNER_TOKEN" > /tmp/runner-token
-              exec forgejo-runner daemon \
-                --config /config/config.yaml \
-                --url "$FORGEJO_URL" \
-                --uuid "$RUNNER_UUID" \
-                --token-url "file:///tmp/runner-token"
+              {
+                echo "server:"
+                echo "  connections:"
+                echo "    forgejo:"
+                echo "      url: ${FORGEJO_URL}"
+                echo "      uuid: ${RUNNER_UUID}"
+                echo "      token: ${RUNNER_TOKEN}"
+              } > /tmp/config.yaml
+              cat /config/config.yaml >> /tmp/config.yaml
+              exec forgejo-runner daemon --config /tmp/config.yaml
           env:
             - name: DOCKER_HOST
               value: tcp://localhost:2375
