@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: forgejo-runner-config
+  namespace: forgejo-runner
+data:
+  # Runner/daemon settings only - NO credentials here (those come from Vault and
+  # are passed to the daemon via --url/--uuid/--token-url).
+  config.yaml: |
+    log:
+      level: info
+    runner:
+      file: /data/.runner
+      capacity: 1
+      timeout: 3h
+      # 'docker' is what workflows target via `runs-on: docker`; it maps to a job
+      # container image that already has docker CLI + git.
+      labels:
+        - "docker:docker://catthehacker/ubuntu:act-latest"
+    cache:
+      enabled: false
+    container:
+      # Job containers share the pod netns so they can resolve
+      # forgejo.whatsoever.au (CoreDNS -> Technitium) to push the image.
+      network: host
+      # Talk to the DinD sidecar over localhost (no TLS; pod-local only).
+      docker_host: "tcp://localhost:2375"
+      valid_volumes:
+        - '**'

@@ -14,3 +14,4 @@ resources:
   - ollama
   - cloudnative-pg
   - tailscale-operator
+  - forgejo-runner

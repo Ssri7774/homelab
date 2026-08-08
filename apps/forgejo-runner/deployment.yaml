@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgejo-runner
+  namespace: forgejo-runner
+  labels:
+    app: forgejo-runner
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate            # single runner + DinD storage; don't run two at once
+  selector:
+    matchLabels:
+      app: forgejo-runner
+  template:
+    metadata:
+      labels:
+        app: forgejo-runner
+    spec:
+      containers:
+        # The runner: registers with Forgejo on first start (env below), then
+        # runs the daemon and executes jobs by talking to the DinD sidecar.
+        - name: runner
+          image: data.forgejo.org/forgejo/runner:11   # confirm/pin a tag you're happy with
+          # v11 runner: connect the daemon with url + uuid + token (persistent
+          # creds from Forgejo's "Create new runner"). Token is written to a file
+          # so it never appears in the process args.
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              echo -n "$RUNNER_TOKEN" > /tmp/runner-token
+              exec forgejo-runner daemon \
+                --config /config/config.yaml \
+                --url "$FORGEJO_URL" \
+                --uuid "$RUNNER_UUID" \
+                --token-url "file:///tmp/runner-token"
+          env:
+            - name: DOCKER_HOST
+              value: tcp://localhost:2375
+            - name: FORGEJO_URL
+              value: http://forgejo.whatsoever.au/
+            - name: RUNNER_UUID
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-runner-creds
+                  key: uuid
+            - name: RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-runner-creds
+                  key: token
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+        # Docker-in-Docker: provides the daemon that builds the image. Privileged
+        # is required for DinD. Isolated in this namespace; harden later (rootless
+        # buildkit or a dedicated build node) if desired.
+        - name: dind
+          image: docker:dind
+          securityContext:
+            privileged: true
+          args:
+            - "--host=tcp://0.0.0.0:2375"     # non-TLS, listens on localhost within the pod
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""                        # disable TLS (pod-local only)
+          volumeMounts:
+            - name: dind-storage
+              mountPath: /var/lib/docker
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: forgejo-runner-config
+        - name: dind-storage
+          emptyDir: {}
