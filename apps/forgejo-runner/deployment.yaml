@@ -52,7 +52,15 @@ spec:
       containers:
         - name: runner
           image: data.forgejo.org/forgejo/runner:11
-          command: ["forgejo-runner", "daemon", "--config", "/config/config.yaml"]
+          # Wait for the DinD sidecar: the daemon exits if it can't reach docker
+          # at startup, so retry until dind is up instead of crash-looping.
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              until forgejo-runner daemon --config /config/config.yaml; do
+                echo "runner exited (waiting for dind); retrying in 3s..."
+                sleep 3
+              done
           env:
             - name: DOCKER_HOST               # reach the DinD sidecar (config also sets this)
               value: tcp://localhost:2375
