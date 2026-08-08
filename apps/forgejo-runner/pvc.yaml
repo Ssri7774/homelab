@@ -1,0 +1,15 @@
+# Dedicated volume for the DinD daemon's /var/lib/docker (image layers + build
+# cache). Keeps large image pulls/builds OFF the node's ephemeral disk, which was
+# causing DiskPressure evictions when dind-storage was an emptyDir.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: forgejo-runner-dind
+  namespace: forgejo-runner
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: synology-iscsi-storage
+  resources:
+    requests:
+      storage: 20Gi

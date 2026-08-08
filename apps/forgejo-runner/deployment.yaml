@@ -103,4 +103,5 @@ spec:
           configMap:
             name: forgejo-runner-config
         - name: dind-storage
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: forgejo-runner-dind    # dedicated iSCSI volume, off node disk
