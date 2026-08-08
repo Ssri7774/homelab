@@ -17,43 +17,42 @@ spec:
       labels:
         app: forgejo-runner
     spec:
-      containers:
-        # The runner: registers with Forgejo on first start (env below), then
-        # runs the daemon and executes jobs by talking to the DinD sidecar.
-        - name: runner
-          image: data.forgejo.org/forgejo/runner:11   # confirm/pin a tag you're happy with
-          # v11 runner: the connection (url/uuid/token) lives in the config file
-          # under server.connections. Build it at runtime from the Vault-backed
-          # env (keeps the token out of Git and out of the process args), then
-          # append the static runner/container settings from the ConfigMap.
+      # Register once (writes /data/.runner from the shared secret), then the
+      # daemon container reads that file. This runner's `daemon` has no --url;
+      # registration is a separate create-runner-file step.
+      initContainers:
+        - name: register
+          image: data.forgejo.org/forgejo/runner:11
+          workingDir: /data                  # create-runner-file writes ./.runner here
           command: ["/bin/sh", "-ec"]
           args:
             - |
-              {
-                echo "server:"
-                echo "  connections:"
-                echo "    forgejo:"
-                echo "      url: ${FORGEJO_URL}"
-                echo "      uuid: ${RUNNER_UUID}"
-                echo "      token: ${RUNNER_TOKEN}"
-              } > /tmp/config.yaml
-              cat /config/config.yaml >> /tmp/config.yaml
-              exec forgejo-runner daemon --config /tmp/config.yaml
+              if [ ! -f /data/.runner ]; then
+                forgejo-runner create-runner-file --connect \
+                  --instance "$FORGEJO_URL" \
+                  --name "$RUNNER_NAME" \
+                  --secret "$RUNNER_TOKEN"
+              fi
           env:
-            - name: DOCKER_HOST
-              value: tcp://localhost:2375
             - name: FORGEJO_URL
               value: http://forgejo.whatsoever.au/
-            - name: RUNNER_UUID
-              valueFrom:
-                secretKeyRef:
-                  name: forgejo-runner-creds
-                  key: uuid
-            - name: RUNNER_TOKEN
+            - name: RUNNER_NAME
+              value: k3s-hp-master-runner
+            - name: RUNNER_TOKEN               # the 40-hex "shared secret" from Forgejo
               valueFrom:
                 secretKeyRef:
                   name: forgejo-runner-creds
                   key: token
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      containers:
+        - name: runner
+          image: data.forgejo.org/forgejo/runner:11
+          command: ["forgejo-runner", "daemon", "--config", "/config/config.yaml"]
+          env:
+            - name: DOCKER_HOST               # reach the DinD sidecar (config also sets this)
+              value: tcp://localhost:2375
           volumeMounts:
             - name: data
               mountPath: /data
@@ -65,18 +64,17 @@ spec:
               memory: 256Mi
             limits:
               memory: 512Mi
-        # Docker-in-Docker: provides the daemon that builds the image. Privileged
-        # is required for DinD. Isolated in this namespace; harden later (rootless
-        # buildkit or a dedicated build node) if desired.
+        # Docker-in-Docker: the daemon that builds the image. Privileged is
+        # required for DinD. Isolated in this namespace; harden later if desired.
         - name: dind
           image: docker:dind
           securityContext:
             privileged: true
           args:
-            - "--host=tcp://0.0.0.0:2375"     # non-TLS, listens on localhost within the pod
+            - "--host=tcp://0.0.0.0:2375"     # non-TLS, pod-local only
           env:
             - name: DOCKER_TLS_CERTDIR
-              value: ""                        # disable TLS (pod-local only)
+              value: ""
           volumeMounts:
             - name: dind-storage
               mountPath: /var/lib/docker
