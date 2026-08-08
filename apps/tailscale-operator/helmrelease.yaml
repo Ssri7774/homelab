@@ -1,0 +1,25 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: tailscale-operator
+  namespace: tailscale
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: tailscale-operator
+      version: "1.98.x"          # floats on patch; pin exact if you prefer
+      sourceRef:
+        kind: HelmRepository
+        name: tailscale
+  install:
+    crds: CreateReplace
+  upgrade:
+    crds: CreateReplace
+  # No OAuth creds in values: with oauth.clientId unset the chart uses the
+  # pre-existing Secret "operator-oauth" (created by the ExternalSecret above).
+  # The operator then provisions ingressClass "tailscale"; Marga's Ingress uses
+  # it. Who can reach Marga is enforced by the tailnet ACL (tag:marga).
+  values:
+    operatorConfig:
+      hostname: k3s-operator

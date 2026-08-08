@@ -12,3 +12,5 @@ resources:
   - rabbitmq
   - milvus
   - ollama
+  - cloudnative-pg
+  - tailscale-operator
