@@ -21,9 +21,16 @@ spec:
     crds:
       enabled: true
       keep: true
-    # DNS-01 self-check must use a clean PUBLIC resolver (split-horizon: Technitium
-    # shadows whatsoever.au internally; 8.8.8.8 is hijacked on this network, so
-    # 1.1.1.1 only). Baked in here so it's declarative - no more imperative patch.
+    # DNS-01 self-check. This network is hostile to DNS: Technitium shadows
+    # whatsoever.au internally (split-horizon), 8.8.8.8 is hijacked, and 1.1.1.1
+    # only returns the record with full recursion (RD=1) which cert-manager's
+    # check doesn't get here. Cloudflare's AUTHORITATIVE nameservers answer the
+    # TXT directly (RD=0) and aren't a hijack-prone public-resolver IP, so we
+    # point the check straight at them.
+    #   naya.ns.cloudflare.com = 108.162.194.242 (confirmed reachable + answers TXT)
+    # Add rick.ns.cloudflare.com's IP here too for redundancy once resolved.
+    # (Slightly coupled to the zone's NS IPs; fine for a homelab. Longer term a
+    # dedicated in-cluster DoT resolver would be the fully robust option.)
     extraArgs:
       - --dns01-recursive-nameservers-only
-      - --dns01-recursive-nameservers=1.1.1.1:53
+      - --dns01-recursive-nameservers=108.162.194.242:53
