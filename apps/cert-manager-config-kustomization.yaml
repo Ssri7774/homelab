@@ -1,0 +1,21 @@
+# cert-manager CONFIG - applies only after the cert-manager install Kustomization
+# is Ready (CRDs + webhook up), via dependsOn. This is what breaks the deadlock
+# where issuers/cert were applied before their CRDs existed.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cert-manager-config
+  namespace: flux-system
+spec:
+  interval: 30m
+  retryInterval: 1m
+  timeout: 5m
+  prune: true
+  wait: false
+  dependsOn:
+    - name: cert-manager
+  path: ./apps/cert-manager-config
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system

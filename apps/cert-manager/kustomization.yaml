@@ -1,17 +1,10 @@
+# cert-manager INSTALL only (HelmRelease v1.21 + its Helm repo + namespace).
+# The config (ClusterIssuers/Certificate/TLSStore) lives in ../cert-manager-config
+# and is reconciled by a separate Flux Kustomization that dependsOn this one, so
+# the CRDs + webhook exist before those CRs apply.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# No blanket namespace: resources set their own (cert-manager ns for the
-# install/ESO, kube-system for the wildcard cert + TLSStore, cluster-scoped
-# for the ClusterIssuers).
-# Replaces the EOL v1.5.3 static install with a GitOps-managed v1.21 (HelmRelease),
-# then the config against it. Do the clean cutover (delete old static install)
-# BEFORE this reconciles - see the runbook.
 resources:
   - namespace.yaml
   - helmrepository.yaml
   - helmrelease.yaml
-  - externalsecret.yaml
-  - clusterissuer-staging.yaml
-  - clusterissuer-prod.yaml
-  - certificate-wildcard.yaml
-  - tlsstore-default.yaml

@@ -1,0 +1,12 @@
+# cert-manager CONFIG (needs cert-manager's CRDs + webhook to exist first).
+# Reconciled by the cert-manager-config Flux Kustomization, which dependsOn the
+# cert-manager (install) Kustomization - that ordering is what fixes the
+# chicken-and-egg where these CRs were applied before their CRDs existed.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - externalsecret.yaml
+  - clusterissuer-staging.yaml
+  - clusterissuer-prod.yaml
+  - certificate-wildcard.yaml
+  - tlsstore-default.yaml
