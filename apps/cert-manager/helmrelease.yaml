@@ -1,0 +1,29 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cert-manager
+  namespace: cert-manager
+spec:
+  interval: 1h
+  releaseName: cert-manager
+  install:
+    crds: Create
+  upgrade:
+    crds: CreateReplace
+  chart:
+    spec:
+      chart: cert-manager
+      version: "v1.21.x"          # replaces the EOL v1.5.3 static install
+      sourceRef:
+        kind: HelmRepository
+        name: jetstack
+  values:
+    crds:
+      enabled: true
+      keep: true
+    # DNS-01 self-check must use a clean PUBLIC resolver (split-horizon: Technitium
+    # shadows whatsoever.au internally; 8.8.8.8 is hijacked on this network, so
+    # 1.1.1.1 only). Baked in here so it's declarative - no more imperative patch.
+    extraArgs:
+      - --dns01-recursive-nameservers-only
+      - --dns01-recursive-nameservers=1.1.1.1:53
