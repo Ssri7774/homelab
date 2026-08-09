@@ -12,7 +12,7 @@ spec:
   secretName: whatsoever-au-wildcard-tls
   issuerRef:
     kind: ClusterIssuer
-    name: letsencrypt-staging      # -> switch to letsencrypt-prod after staging validates
+    name: letsencrypt-prod         # staging validated; now issuing a real, publicly-trusted cert
   commonName: "*.whatsoever.au"
   dnsNames:
     - "*.whatsoever.au"
