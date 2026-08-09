@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# No blanket namespace: resources set their own (cert-manager ns for the
+# install/ESO, kube-system for the wildcard cert + TLSStore, cluster-scoped
+# for the ClusterIssuers).
+# cert-manager itself is already installed on the cluster (outside GitOps, ~85d).
+# We only add CONFIG here against that existing install - no HelmRelease/namespace.
+# (Adopting the cert-manager install into GitOps is a good, separate follow-up.)
+resources:
+  - externalsecret.yaml
+  - clusterissuer-staging.yaml
+  - clusterissuer-prod.yaml
+  - certificate-wildcard.yaml
+  - tlsstore-default.yaml

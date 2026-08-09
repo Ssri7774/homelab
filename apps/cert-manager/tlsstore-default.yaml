@@ -1,0 +1,15 @@
+# Makes the k3s Traefik serve the wildcard cert as its DEFAULT for any HTTPS
+# host that doesn't have its own cert - so forgejo.whatsoever.au (and every other
+# *.whatsoever.au service on 443) gets a valid cert with zero per-app config.
+#
+# NOTE: CRD group depends on your Traefik version. k3s v1.34 ships Traefik v3 ->
+# traefik.io/v1alpha1 (used here). If `kubectl get crd | grep traefik` shows
+# traefik.containo.us, change apiVersion to traefik.containo.us/v1alpha1.
+apiVersion: traefik.io/v1alpha1
+kind: TLSStore
+metadata:
+  name: default
+  namespace: kube-system
+spec:
+  defaultCertificate:
+    secretName: whatsoever-au-wildcard-tls

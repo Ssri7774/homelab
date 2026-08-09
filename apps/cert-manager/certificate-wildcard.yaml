@@ -1,0 +1,19 @@
+# Wildcard cert for the whole internal domain. Lives in kube-system so the
+# k3s-bundled Traefik (also in kube-system) can use it as its default cert.
+# Starts on the STAGING issuer to prove DNS-01 end to end; flip issuerRef to
+# letsencrypt-prod once staging issues cleanly, then delete the staging Secret
+# so a real cert is requested.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: whatsoever-au-wildcard
+  namespace: kube-system
+spec:
+  secretName: whatsoever-au-wildcard-tls
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt-staging      # -> switch to letsencrypt-prod after staging validates
+  commonName: "*.whatsoever.au"
+  dnsNames:
+    - "*.whatsoever.au"
+    - "whatsoever.au"
