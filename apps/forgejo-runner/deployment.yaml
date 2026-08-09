@@ -82,8 +82,9 @@ spec:
           securityContext:
             privileged: true
           args:
-            - "--host=tcp://0.0.0.0:2375"                    # non-TLS, pod-local only
-            - "--insecure-registry=forgejo.whatsoever.au"    # registry is served over HTTP
+            - "--host=tcp://0.0.0.0:2375"    # non-TLS, pod-local only
+            # (removed --insecure-registry: forgejo.whatsoever.au now has a valid
+            #  Let's Encrypt cert via cert-manager, so dind validates TLS normally.)
           env:
             - name: DOCKER_TLS_CERTDIR
               value: ""
