@@ -14,9 +14,12 @@ spec:
   primaryUpdateStrategy: unsupervised
 
   storage:
-    # Confirm the exact StorageClass name (tech-stack: "synology-iscsi-storage",
-    # the default iSCSI CSI class, Retain + expandable).
-    storageClass: synology-iscsi-storage
+    # synology-iscsi-ext4 = the iSCSI CSI class WITH an explicit fsType (ext4).
+    # The default "synology-iscsi-storage" sets no fsType, so provisioned PVs
+    # have empty .spec.csi.fsType and the kubelet skips the fsGroup chown
+    # (fsGroupPolicy: ReadWriteOnceWithFSType) - leaving the volume root-owned
+    # and initdb failing with "Permission denied". Declaring fsType fixes it.
+    storageClass: synology-iscsi-ext4
     size: 8Gi
 
   # Keep Postgres OFF the control-plane node (hp-master is memory-tight) and
