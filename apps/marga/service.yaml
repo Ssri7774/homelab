@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: marga-web
+  namespace: marga
+spec:
+  type: ClusterIP        # never a LoadBalancer/NodePort - no public exposure.
+  selector:
+    app.kubernetes.io/name: marga-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

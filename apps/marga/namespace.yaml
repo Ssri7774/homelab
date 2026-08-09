@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: marga
+  labels:
+    # Self-contained overlay: everything Marga lives in this namespace so it
+    # lifts cleanly into a dedicated marga-gitops repo later (SaaS phase).
+    app.kubernetes.io/part-of: marga

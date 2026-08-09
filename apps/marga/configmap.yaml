@@ -1,0 +1,16 @@
+# Non-secret config (12-factor). Secrets come from Vault via ExternalSecret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: marga-config
+  namespace: marga
+data:
+  # MinIO = the Milvus-bundled "homelab-minio" in the milvus-operator namespace
+  # (the only MinIO in the cluster; confirmed via kubectl get svc). Reachability
+  # is checked credential-free via /minio/health/live. NOTE (R2 / gate): this
+  # instance is owned by the Milvus stack - move Marga's document storage to a
+  # dedicated MinIO/tenant before real PII lands.
+  MINIO_ENDPOINT: "http://homelab-minio.milvus-operator.svc.cluster.local:9000"
+  MINIO_BUCKET: "marga"          # created by the ticket that first needs it
+  NODE_ENV: "production"
+  PORT: "3000"

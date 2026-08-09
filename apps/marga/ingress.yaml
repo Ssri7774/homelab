@@ -1,0 +1,27 @@
+# Tailnet-only exposure. ingressClassName "tailscale" makes the Tailscale
+# operator publish this Service as a device on your tailnet with a MagicDNS
+# name and a Tailscale-issued (real Let's Encrypt) HTTPS cert. It is NOT
+# reachable off the tailnet - there is no public LoadBalancer and no cloud DNS.
+#
+# Who can reach it is enforced by the tailnet ACL (see tailnet-acl-grant.hujson).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: marga
+  namespace: marga
+  annotations:
+    tailscale.com/hostname: "marga"   # -> https://marga.<your-tailnet>.ts.net
+    # Tag the operator-created proxy device so the ACL grant (dst tag:marga)
+    # matches. tag:marga is managed by tag:k8s-operator, so the operator's
+    # trust credential is allowed to assign it.
+    tailscale.com/tags: "tag:marga"
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: marga-web
+      port:
+        number: 80
+  tls:
+    - hosts:
+        - "marga"        # Tailscale provisions the HTTPS cert for this host

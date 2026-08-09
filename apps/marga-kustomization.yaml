@@ -1,0 +1,38 @@
+# Marga gets its OWN Flux Kustomization so a broken Marga change fails only
+# this reconcile, not the shared cluster-apps one. cluster-apps applies this
+# CR (it lives under ./apps); this CR then reconciles ./apps/marga on its own.
+#
+# Source is the cluster's single GitRepository, named "flux-system" (confirmed
+# against the live cluster: repo http://forgejo.whatsoever.au/Ssri7774/k3s-gitops.git,
+# branch main, path ./apps). This CR reconciles ./apps/marga on its own.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: marga
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  prune: true
+  wait: true
+  path: ./apps/marga
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  # Don't start reconciling Marga until the operators it depends on are healthy.
+  # dependsOn points at other Flux Kustomizations; the operators here are
+  # HelmReleases under cluster-apps, so we instead rely on CRD-presence + retry
+  # (Flux backs off and re-applies until postgresql.cnpg.io + the tailscale
+  # ingressClass exist). If you split the operators into their own Kustomization
+  # you can add an explicit dependsOn here.
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: marga-web
+      namespace: marga
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: marga-pg
+      namespace: marga

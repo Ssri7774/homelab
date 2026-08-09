@@ -15,3 +15,7 @@ resources:
   - cloudnative-pg
   - tailscale-operator
   - forgejo-runner
+  - cert-manager-kustomization.yaml   # isolated Flux Kustomization -> ./apps/cert-manager
+  # NOTE: Marga is staged but not wired here yet. When finishing the B-R1-01
+  # deploy, add:  - marga-kustomization.yaml  (its own isolated Flux Kustomization
+  # -> ./apps/marga; do NOT add a bare `- marga`).

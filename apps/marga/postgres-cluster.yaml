@@ -1,0 +1,56 @@
+# CloudNativePG Cluster. The operator generates the credentials in-cluster
+# (Secret marga-pg-app) - they never touch Git. The app reads that Secret.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: marga-pg
+  namespace: marga
+spec:
+  instances: 2                       # HA pair (tech-stack: HA + PITR). Drop to 1
+                                     # for the very first bootstrap if you want a
+                                     # lighter footprint, then scale up.
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+  primaryUpdateStrategy: unsupervised
+
+  storage:
+    # Confirm the exact StorageClass name (tech-stack: "synology-iscsi-storage",
+    # the default iSCSI CSI class, Retain + expandable).
+    storageClass: synology-iscsi-storage
+    size: 8Gi
+
+  # Keep Postgres OFF the control-plane node (hp-master is memory-tight) and
+  # spread the two instances across the workers. The workers carry no
+  # "worker" role label (confirmed: kubectl get nodes shows ROLES <none>), so
+  # we exclude the control-plane role instead - which hp-master DOES have -
+  # rather than requiring a label that doesn't exist.
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: required
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+
+  bootstrap:
+    initdb:
+      database: marga
+      owner: marga
+      # Empty schema per the ticket. Real migrations run from the app image
+      # (initContainer) so the migration history lives with the code.
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+  monitoring:
+    enablePodMonitor: true            # kube-prometheus-stack picks this up.
+
+  # Backups are intentionally NOT configured here - offsite AU backup + tested
+  # restore is its own ticket (B-R1-09). The .spec.backup block slots in there.
