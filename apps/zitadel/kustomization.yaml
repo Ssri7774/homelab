@@ -4,6 +4,7 @@ namespace: zitadel
 resources:
   - namespace.yaml
   - externalsecret.yaml
+  - externalsecret-config.yaml
   - postgres-cluster.yaml
   - helmrepository.yaml
   - helmrelease.yaml

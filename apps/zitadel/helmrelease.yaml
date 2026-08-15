@@ -33,7 +33,7 @@ spec:
         namespace: zitadel          # self-contained (see helmrepository.yaml)
   # dependsOn is not set: zitadel-pg (CNPG) and external-secrets provide the
   # Secrets/CRDs this release needs; the isolated Flux Kustomization retries
-  # until zitadel-db / zitadel-masterkey / zitadel-pg-superuser exist.
+  # until zitadel-masterkey / zitadel-config exist.
   values:
     replicaCount: 2
 
@@ -64,20 +64,13 @@ spec:
               SSL:
                 Mode: require
 
-      # Passwords injected as env (never in Git). Zitadel var pattern is
-      # ZITADEL_<SECTION>_<KEY>. User password = Vault (zitadel-db); Admin
-      # password = CNPG superuser secret (setup-time only).
-      env:
-        - name: ZITADEL_DATABASE_POSTGRES_USER_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: zitadel-db
-              key: password
-        - name: ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: zitadel-pg-superuser     # CNPG-generated
-              key: password
+      # DB passwords must reach the setup/init HOOK JOB, which the chart does NOT
+      # give `zitadel.env` to (env is Deployment-only). The chart-blessed path is
+      # a config Secret mounted + merged with the ConfigMap for ALL workloads
+      # (deployment + init/setup jobs). Built by ExternalSecret zitadel-config
+      # from Vault: User.Password = db_password, Admin.Password = admin_password.
+      # Nothing sensitive in Git.
+      configSecretName: zitadel-config    # key "config-yaml" (chart default)
 
     # Built-in login (v1) served by the core service -> ONE service, ONE host,
     # ONE issuer. The separate Login v2 deployment is intentionally off; revisit
