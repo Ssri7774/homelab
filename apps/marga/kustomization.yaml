@@ -4,6 +4,7 @@ namespace: marga
 resources:
   - namespace.yaml
   - externalsecret.yaml
+  - externalsecret-oidc.yaml     # B-R1-02: OIDC client creds + session key (Vault)
   - configmap.yaml
   - postgres-cluster.yaml
   - deployment.yaml
@@ -15,4 +16,4 @@ resources:
 images:
   - name: __IMAGE__
     newName: forgejo.whatsoever.au/ssri7774/marga-platform
-    newTag: "747a5313bbc2fefdd58425d58e121dd812612ed8"   # first build; bump via reviewed commit to deploy new images
+    newTag: "999f77d7f750e364dfe5972632455d7ead497460"   # B-R1-02 auth build (was 747a531); bump via reviewed commit to deploy new images

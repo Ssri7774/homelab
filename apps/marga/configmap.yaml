@@ -14,3 +14,13 @@ data:
   MINIO_BUCKET: "marga"          # created by the ticket that first needs it
   NODE_ENV: "production"
   PORT: "3000"
+
+  # --- B-R1-02 auth (non-secret) ---
+  # Issuer is the ONE Zitadel host; discovery derives authorize/token/jwks/
+  # end_session from it. Must equal Zitadel ExternalDomain (apps/zitadel).
+  OIDC_ISSUER: "https://auth.tail56799c.ts.net"
+  # This app's own base URL; the OIDC redirect/callback + post-logout derive
+  # from it (callback = APP_BASE_URL/api/auth/callback, registered on the client).
+  APP_BASE_URL: "https://marga.tail56799c.ts.net"
+  # Idle timeout in minutes (006: 30-60). Enforced app-side in middleware.
+  IDLE_TIMEOUT_MIN: "45"
