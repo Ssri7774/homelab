@@ -17,6 +17,8 @@ resources:
   - forgejo-runner
   # Marga: isolated Flux Kustomization -> ./apps/marga (do NOT add a bare `- marga`).
   - marga-kustomization.yaml
+  # Zitadel: isolated Flux Kustomization -> ./apps/zitadel (mirror of marga).
+  - zitadel-kustomization.yaml
   # cert-manager: install (HelmRelease) + config (issuers/cert/tlsstore), split
   # so config applies only after the install's CRDs/webhook are up (dependsOn).
   - cert-manager-kustomization.yaml

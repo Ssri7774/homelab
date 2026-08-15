@@ -1,0 +1,35 @@
+# Zitadel gets its OWN Flux Kustomization so a broken Zitadel change fails only
+# this reconcile, not the shared cluster-apps one (same isolation as marga).
+# cluster-apps applies THIS CR (it lives under ./apps); this CR then reconciles
+# ./apps/zitadel on its own.
+#
+# Source is the cluster's single GitRepository "flux-system"
+# (Ssri7774/k3s-gitops @ main, path ./apps), confirmed in B-R1-01.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: zitadel
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  prune: true
+  wait: true
+  path: ./apps/zitadel
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  # HelmRelease + CNPG Cluster health gate the reconcile. The HelmRelease itself
+  # waits on the zitadel-db / zitadel-masterkey / zitadel-pg-superuser Secrets;
+  # Flux backs off + retries until CNPG + external-secrets have produced them.
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: zitadel
+      namespace: zitadel
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: zitadel-pg
+      namespace: zitadel

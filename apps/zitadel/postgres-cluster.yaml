@@ -1,0 +1,62 @@
+# Dedicated CloudNativePG Cluster for Zitadel - SEPARATE from marga-pg so the
+# IdP's data lifecycle is independent of the app's. Reuses the CNPG operator
+# already installed in B-R1-01 (no new operator).
+#
+# Credential split (deliberate):
+#   - superuser (postgres): CNPG-generated, in Secret "zitadel-pg-superuser".
+#     Used ONLY as Zitadel's setup "Admin" to create the zitadel DB + role.
+#   - runtime "zitadel" role: created by Zitadel's setup with the password from
+#     Vault (Secret "zitadel-db"). That is the DB credential that lives in Vault.
+#   We intentionally do NOT pre-create the zitadel DB/role here - Zitadel's Admin
+#   bootstraps them, so there's no double-create conflict.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: zitadel-pg
+  namespace: zitadel
+spec:
+  instances: 2                       # HA pair, same posture as marga-pg. Drop to 1
+                                     # for a lighter first bootstrap if you prefer.
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+  primaryUpdateStrategy: unsupervised
+
+  # Zitadel's setup Admin needs a privileged login to CREATE DATABASE / CREATE
+  # ROLE. Enable the superuser secret for exactly that (setup-time only).
+  enableSuperuserAccess: true
+
+  storage:
+    storageClass: synology-iscsi-storage   # confirm exact name (same as marga-pg)
+    size: 8Gi
+
+  # Keep PG off the memory-tight control-plane (hp-master) and spread the pair
+  # across the workers - identical rationale to marga-pg (workers carry no role
+  # label, so we exclude the control-plane role rather than require a worker one).
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: required
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+
+  bootstrap:
+    initdb:
+      database: app                  # neutral bootstrap DB; Zitadel creates its
+      owner: app                     # own "zitadel" DB + role via the Admin user.
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+  monitoring:
+    enablePodMonitor: true
+
+  # Backups NOT configured here - offsite AU backup + tested restore is B-R1-09,
+  # and it must cover BOTH marga-pg and zitadel-pg before go-live.

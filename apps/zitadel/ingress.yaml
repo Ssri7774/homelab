@@ -1,0 +1,29 @@
+# Tailnet-only exposure for Zitadel, identical mechanism to Marga (B-R1-01):
+# ingressClassName "tailscale" publishes the Service as a tailnet device with a
+# MagicDNS name and a Tailscale-issued (real Let's Encrypt) HTTPS cert. NOT
+# reachable off the tailnet - no public LoadBalancer, no cloud DNS.
+#
+# hostname "auth"  ->  https://auth.tail56799c.ts.net  == the issuer (see
+# helmrelease.yaml banner). This host MUST equal ExternalDomain and the app's
+# OIDC issuer/discovery/JWKS base. Do not diverge.
+#
+# Who can reach it is enforced by the tailnet ACL (extend the B-R1-01 grant to
+# add dst tag:zitadel for you + Lavanya, TCP/443 only - see the ACL note).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: zitadel
+  namespace: zitadel
+  annotations:
+    tailscale.com/hostname: "auth"        # -> https://auth.tail56799c.ts.net
+    tailscale.com/tags: "tag:zitadel"     # managed by tag:k8s-operator (ACL grant)
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: zitadel                       # chart Service (releaseName "zitadel")
+      port:
+        number: 8080
+  tls:
+    - hosts:
+        - "auth"                          # Tailscale provisions the HTTPS cert

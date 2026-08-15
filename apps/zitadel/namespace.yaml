@@ -1,0 +1,12 @@
+# Zitadel gets its own namespace, isolated from marga. Restricted Pod Security
+# baseline (the Zitadel + CNPG pods run non-root; PSA "restricted" is the target
+# once verified - start at "baseline" to avoid a first-deploy surprise, tighten
+# to "restricted" in the pre-gate hardening pass alongside the marga NetworkPolicy).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zitadel
+  labels:
+    app.kubernetes.io/part-of: marga-platform
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted

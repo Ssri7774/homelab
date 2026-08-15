@@ -1,0 +1,13 @@
+# Flux HelmRepository for the official Zitadel charts. Kept in the zitadel
+# namespace (not flux-system) so this bundle is self-contained and the
+# kustomization's `namespace: zitadel` doesn't split the source from the release.
+# Delete this file if you already have an equivalent HelmRepository named zitadel
+# (and point the HelmRelease sourceRef at wherever it lives).
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: zitadel
+  namespace: zitadel
+spec:
+  interval: 24h
+  url: https://charts.zitadel.com
