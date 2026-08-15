@@ -26,7 +26,12 @@ spec:
   enableSuperuserAccess: true
 
   storage:
-    storageClass: synology-iscsi-storage   # confirm exact name (same as marga-pg)
+    # MUST be the ext4 class: the Synology CSI has fsGroupPolicy
+    # ReadWriteOnceWithFSType, so fsGroup (26) is only applied to a volume with a
+    # recognised fstype. This class formats ext4 -> fsGroup applied -> initdb can
+    # write its data dir. (marga-pg's live PVCs use this class; "synology-iscsi-
+    # storage" produces a no-fstype volume and initdb fails with Permission denied.)
+    storageClass: synology-iscsi-ext4
     size: 8Gi
 
   # Keep PG off the memory-tight control-plane (hp-master) and spread the pair
