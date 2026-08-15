@@ -8,4 +8,6 @@ resources:
   - postgres-cluster.yaml
   - helmrepository.yaml
   - helmrelease.yaml
+  - nginx-configmap.yaml
+  - nginx.yaml
   - ingress.yaml

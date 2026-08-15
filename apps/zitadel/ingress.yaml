@@ -21,7 +21,7 @@ spec:
   ingressClassName: tailscale
   defaultBackend:
     service:
-      name: zitadel                       # chart Service (releaseName "zitadel")
+      name: zitadel-proxy                 # nginx reverse proxy -> core :8080 / login :3000
       port:
         number: 8080
   tls:

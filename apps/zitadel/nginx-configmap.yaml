@@ -1,0 +1,67 @@
+# nginx reverse proxy in front of Zitadel: one Tailscale-facing backend that
+# splits the single "auth" host between the Login v2 UI and the Zitadel core.
+# Path map is per Zitadel's own nginx reverse-proxy docs:
+#   /ui/v2/login  -> login (Next.js, :3000)
+#   everything else (/oauth, /oidc, /.well-known, /ui/console, APIs, assets) -> core (:8080)
+# Browser traffic to core is HTTP/1.1 (OIDC REST + gRPC-web console + discovery),
+# so proxy_pass HTTP/1.1 is correct - the login<->core gRPC is pod-to-pod and
+# never transits this proxy.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zitadel-proxy-nginx
+  namespace: zitadel
+data:
+  nginx.conf: |
+    worker_processes auto;
+    error_log /dev/stderr warn;
+    pid /tmp/nginx.pid;                 # writable under readOnlyRootFilesystem
+    events { worker_connections 1024; }
+    http {
+      access_log /dev/stdout;
+      # keep all scratch paths under the emptyDir-mounted /tmp
+      client_body_temp_path /tmp/client_temp;
+      proxy_temp_path       /tmp/proxy_temp;
+      fastcgi_temp_path     /tmp/fastcgi_temp;
+      uwsgi_temp_path       /tmp/uwsgi_temp;
+      scgi_temp_path        /tmp/scgi_temp;
+      sendfile on;
+      keepalive_timeout 65;
+      client_max_body_size 10m;
+
+      # Static upstreams (resolved at startup). Both services live in this ns.
+      upstream zitadel_core  { server zitadel.zitadel.svc.cluster.local:8080; }
+      upstream zitadel_login { server zitadel-login.zitadel.svc.cluster.local:3000; }
+
+      server {
+        listen 8080;
+        server_name _;
+
+        # proxy's own health (independent of core/login), used by k8s probes
+        location = /healthz {
+          access_log off;
+          add_header Content-Type text/plain;
+          return 200 "ok\n";
+        }
+
+        # Login v2 UI - keep the /ui/v2/login prefix intact for the Next.js app.
+        location /ui/v2/login {
+          proxy_pass http://zitadel_login;
+          proxy_http_version 1.1;
+          proxy_set_header Host              $host;
+          proxy_set_header X-Forwarded-Proto https;
+          proxy_set_header X-Forwarded-Host  $host;
+          proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        }
+
+        # Everything else -> Zitadel core (OIDC, discovery, console, APIs, assets).
+        location / {
+          proxy_pass http://zitadel_core;
+          proxy_http_version 1.1;
+          proxy_set_header Host              $host;
+          proxy_set_header X-Forwarded-Proto https;
+          proxy_set_header X-Forwarded-Host  $host;
+          proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        }
+      }
+    }

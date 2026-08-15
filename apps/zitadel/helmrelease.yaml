@@ -72,11 +72,13 @@ spec:
       # Nothing sensitive in Git.
       configSecretName: zitadel-config    # key "config-yaml" (chart default)
 
-    # Built-in login (v1) served by the core service -> ONE service, ONE host,
-    # ONE issuer. The separate Login v2 deployment is intentionally off; revisit
-    # if/when we want the v2 UI (it needs path-based routing to a 2nd service).
+    # Login v2 is the Zitadel v4 default (the instance redirects to /ui/v2/login,
+    # a separate Next.js app). Deploy it; the chart auto-wires its login-client
+    # key (SystemAPIUsers.login-client). Our nginx proxy (zitadel-proxy) routes
+    # /ui/v2/login -> this login Service (zitadel-login:3000), everything else
+    # -> core. Issuer/host unchanged (auth.tail56799c.ts.net).
     login:
-      enabled: false
+      enabled: true
 
     # No bundled Postgres - we use the dedicated CNPG cluster.
     postgresql:

@@ -1,0 +1,84 @@
+# Dedicated nginx reverse proxy (zitadel-proxy). The Tailscale Ingress backends
+# onto THIS single service; nginx splits /ui/v2/login vs core (see the ConfigMap).
+# Hardened like the marga app: non-root (nginx-unprivileged, uid 101, listens on
+# 8080), readOnlyRootFilesystem, all caps dropped, no service-account token.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zitadel-proxy
+  namespace: zitadel
+  labels:
+    app.kubernetes.io/name: zitadel-proxy
+    app.kubernetes.io/part-of: marga-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: zitadel-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: zitadel-proxy
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101                 # nginx-unprivileged
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nginx
+          # nginx-unprivileged: non-root, listens on 8080 by default. Pin to a
+          # digest as later hardening if you want fully immutable (ponytail: a
+          # minor tag is fine for an infra sidecar).
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - containerPort: 8080
+              name: http
+          volumeMounts:
+            - name: conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: conf
+          configMap:
+            name: zitadel-proxy-nginx
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zitadel-proxy
+  namespace: zitadel
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: zitadel-proxy
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
