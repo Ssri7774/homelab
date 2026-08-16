@@ -36,10 +36,15 @@ spec:
           ports:
             - containerPort: 8080
               name: http
+            - containerPort: 8443          # in-cluster TLS hop (non-priv port)
+              name: https
           volumeMounts:
             - name: conf
               mountPath: /etc/nginx/nginx.conf
               subPath: nginx.conf
+              readOnly: true
+            - name: tls                    # cert+key from ESO (zitadel-proxy-tls)
+              mountPath: /etc/nginx/tls
               readOnly: true
             - name: tmp
               mountPath: /tmp
@@ -66,6 +71,9 @@ spec:
         - name: conf
           configMap:
             name: zitadel-proxy-nginx
+        - name: tls
+          secret:
+            secretName: zitadel-proxy-tls
         - name: tmp
           emptyDir: {}
 ---
@@ -82,3 +90,6 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+    - name: https              # in-cluster clients hit :443 -> pod :8443
+      port: 443
+      targetPort: https

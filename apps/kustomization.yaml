@@ -4,6 +4,9 @@ kind: Kustomization
 resources:
   - n8n
   - technitium
+  # CoreDNS split-horizon: rewrite the Zitadel issuer host to the in-cluster proxy
+  # so the OIDC backchannel resolves in-cluster (B-R1-02). Bare dir, no health gate.
+  - coredns-custom
   - vault
   - external-secrets
   - milvus-operator

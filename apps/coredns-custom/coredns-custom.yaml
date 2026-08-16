@@ -1,0 +1,19 @@
+# B-R1-02 split-horizon DNS. k3s imports keys ending in `.override` INTO the main
+# CoreDNS `.:53` server block (which already has the kubernetes plugin), so this
+# rewrite runs before resolution and the target Service name resolves normally.
+#
+# Effect: in-cluster clients resolving the Zitadel issuer host get the zitadel-proxy
+# ClusterIP instead of failing (the tailnet MagicDNS name is not resolvable/routable
+# from pods). Browsers on the tailnet use MagicDNS, not cluster DNS, so they are
+# unaffected - the issuer identity (https://auth.tail56799c.ts.net) never changes.
+#
+# After first apply, CoreDNS picks this up via its reload plugin; a
+# `kubectl -n kube-system rollout restart deploy/coredns` makes it deterministic.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  zitadel-auth.override: |
+    rewrite name exact auth.tail56799c.ts.net zitadel-proxy.zitadel.svc.cluster.local

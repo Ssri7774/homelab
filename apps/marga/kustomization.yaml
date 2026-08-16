@@ -5,6 +5,7 @@ resources:
   - namespace.yaml
   - externalsecret.yaml
   - externalsecret-oidc.yaml     # B-R1-02: OIDC client creds + session key (Vault)
+  - externalsecret-authca.yaml   # B-R1-02: CA to trust the in-cluster TLS hop to the issuer
   - configmap.yaml
   - postgres-cluster.yaml
   - deployment.yaml

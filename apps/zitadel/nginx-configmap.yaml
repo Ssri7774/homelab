@@ -35,6 +35,14 @@ data:
 
       server {
         listen 8080;
+        # In-cluster TLS hop for the OIDC backchannel: pods resolve the issuer
+        # host (auth.tail56799c.ts.net) to THIS service via the CoreDNS rewrite and
+        # hit :443 -> :8443 here. Non-priv port keeps the container non-root/uid-101.
+        # Cert (leaf+CA chain) + key from Vault via ESO (secret zitadel-proxy-tls).
+        listen 8443 ssl;
+        ssl_certificate     /etc/nginx/tls/tls.crt;
+        ssl_certificate_key /etc/nginx/tls/tls.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
         server_name _;
 
         # proxy's own health (independent of core/login), used by k8s probes

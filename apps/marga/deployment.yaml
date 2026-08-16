@@ -32,6 +32,9 @@ spec:
           emptyDir: {}
         - name: tmp
           emptyDir: {}
+        - name: auth-ca
+          secret:
+            secretName: zitadel-auth-ca
       # Run DB migrations before the app starts. Uses the SAME image, so the
       # migration history ships with the code. Idempotent (safe on every start).
       initContainers:
@@ -90,11 +93,19 @@ spec:
                 secretKeyRef:
                   name: marga-oidc
                   key: SESSION_SECRET
+            # Trust the in-cluster TLS hop to the issuer host (self-signed CA from
+            # Vault via ESO). The OIDC issuer stays https://auth.tail56799c.ts.net;
+            # split-horizon DNS points the pod at zitadel-proxy, which serves this CA.
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/authca/ca.crt
           volumeMounts:
             - name: next-cache
               mountPath: /app/.next/cache
             - name: tmp
               mountPath: /tmp
+            - name: auth-ca
+              mountPath: /etc/ssl/authca
+              readOnly: true
           # Readiness IS dependency-aware: pull the pod out of the Service when
           # Postgres/MinIO are unreachable, but don't kill it.
           readinessProbe:
