@@ -29,10 +29,19 @@ resource "vault_kubernetes_auth_backend_config" "k3s" {
 }
 
 # 3. Create the Policy
+# ESO is the platform secret broker for all apps. Grant it read across the kv
+# (v2) mount rather than enumerating one path per app (which is what caused the
+# tailscale/marga sync failures). Note: this is the OLD path was "secret/data/n8n"
+# on the default mount - the live mount is "kv", so this also corrects that drift.
+# Per-tenant tightening (a Marga-scoped role bound to the marga namespace SA) is
+# a separate control tracked for the data-protection gate (B-R1-GATE).
 resource "vault_policy" "eso_policy" {
   name   = "eso-policy"
   policy = <<EOT
-path "secret/data/n8n" {
+path "kv/data/*" {
+  capabilities = ["read"]
+}
+path "kv/metadata/*" {
   capabilities = ["read"]
 }
 EOT
