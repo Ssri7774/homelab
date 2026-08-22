@@ -18,4 +18,4 @@ resources:
 images:
   - name: __IMAGE__
     newName: forgejo.whatsoever.au/ssri7774/marga-platform
-    newTag: "999f77d7f750e364dfe5972632455d7ead497460"   # B-R1-02 auth build (was 747a531); bump via reviewed commit to deploy new images
+    newTag: "6ca19dadc5adaf5b5e69698a622b9db2cf7875ec"   # B-R1-03 tenant isolation / RLS build (was 999f77d); bump via reviewed commit to deploy new images

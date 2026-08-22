@@ -62,10 +62,18 @@ spec:
             - configMapRef:
                 name: marga-config
           env:
+            # --- B-R1-03: the running app connects as marga_app ---------------
+            # Was: marga-pg-app (the table owner). A table owner is exempt from
+            # its own RLS policies unless FORCE is set, and even with FORCE it
+            # can DROP the policies outright. marga_app owns nothing, has no
+            # BYPASSRLS, no role memberships, and holds DML only on tables that
+            # migration 0003 has put under a tenant policy. This one reference is
+            # what makes RLS real. The migrate initContainer above KEEPS the
+            # owner credential, because DDL needs it.
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: marga-pg-app
+                  name: marga-app-role
                   key: uri
             - name: MINIO_ACCESS_KEY
               valueFrom:
