@@ -45,6 +45,40 @@ spec:
       # Empty schema per the ticket. Real migrations run from the app image
       # (initContainer) so the migration history lives with the code.
 
+  # --- B-R1-03 NEW: the non-owning application role -------------------------
+  # Declarative role management. The operator creates and reconciles this role
+  # using its own superuser connection; nothing here can be done by the
+  # migration, which has neither CREATEROLE nor superuser.
+  #
+  # Every attribute below is load-bearing:
+  #   superuser: false   } either one would make Postgres skip RLS entirely for
+  #   bypassrls: false   } this role, silently turning the boundary off.
+  #   inRoles: []        - no membership in `marga`. Membership is a FULL bypass
+  #                        path that neither of the flags above catches: a member
+  #                        of the owner can SET ROLE into it and inherit owner DDL
+  #                        plus the auth_lookup_owner carve-out (review finding M1).
+  #
+  # Migration 0003 re-asserts all four facts (superuser, bypassrls, table
+  # ownership, role membership) at apply time and refuses to run if any drifted,
+  # and assert_tenant_rls_complete() re-checks them at runtime. So the role's
+  # safety is enforced in three places, not just declared here.
+  managed:
+    roles:
+      - name: marga_app
+        ensure: present
+        comment: "Non-owning app role - RLS applies to it (B-R1-03 tenant isolation)"
+        login: true
+        superuser: false
+        bypassrls: false
+        createdb: false
+        createrole: false
+        replication: false
+        inherit: true
+        inRoles: []
+        connectionLimit: 20        # 2 replicas x pool max 5, with headroom
+        passwordSecret:
+          name: marga-app-role     # produced by externalsecret-app-role.yaml
+
   resources:
     requests:
       cpu: 100m

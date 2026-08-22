@@ -6,6 +6,7 @@ resources:
   - externalsecret.yaml
   - externalsecret-oidc.yaml     # B-R1-02: OIDC client creds + session key (Vault)
   - externalsecret-authca.yaml   # B-R1-02: CA to trust the in-cluster TLS hop to the issuer
+  - externalsecret-app-role.yaml # B-R1-03: marga_app password + DATABASE_URL (Vault)
   - configmap.yaml
   - postgres-cluster.yaml
   - deployment.yaml
