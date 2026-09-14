@@ -26,3 +26,5 @@ resources:
   # so config applies only after the install's CRDs/webhook are up (dependsOn).
   - cert-manager-kustomization.yaml
   - cert-manager-config-kustomization.yaml
+  # probadiess: isolated Flux Kustomization -> ./apps/probadiess (mirror of marga).
+  - probadiess-kustomization.yaml

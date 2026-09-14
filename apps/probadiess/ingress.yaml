@@ -1,0 +1,48 @@
+# Two hosts, one Service, deliberately different reachability.
+#
+# No `tls:` block on either. The wildcard *.whatsoever.au Certificate plus the
+# TLSStore/default in kube-system make Traefik serve that cert as the default
+# for every host in the zone, which is how vault.whatsoever.au and
+# ollama.whatsoever.au already work in this repo. Adding a tls block here would
+# ask cert-manager for a second, redundant certificate.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: probadiess
+  namespace: probadiess
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: probadiess.whatsoever.au
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: probadiess-web
+                port:
+                  number: 80
+---
+# The admin host. Reachable on the LAN and the tailnet only: Technitium answers
+# for it internally, and the Cloudflare Tunnel config deliberately has no
+# ingress rule for it. If this host ever becomes reachable from the internet,
+# the cause is in cloudflared.yaml, not here.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: probadiess-admin
+  namespace: probadiess
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: admin.probadiess.whatsoever.au
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: probadiess-web
+                port:
+                  number: 80

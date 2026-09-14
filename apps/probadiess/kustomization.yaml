@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: probadiess
+
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - cloudflared.yaml
+
+# Pin the image in ONE place, same as apps/marga. Promoting a build is a
+# reviewed one-line change to newTag; reverting the commit rolls it back.
+# newTag is the full 40 character commit sha, never the short form.
+images:
+  - name: __IMAGE__
+    newName: forgejo.whatsoever.au/ssri7774/probadiess
+    newTag: 6a6ad5cea6a73156b92a53f9169c0a5f86b6f6da

@@ -1,0 +1,142 @@
+# Cloudflare Tunnel: the only thing that makes probadiess reachable from the
+# public internet. It dials out, so nothing is forwarded inward and the home
+# network keeps no open ports.
+#
+# Deliberately the credentials-file style of tunnel, not the token style: the
+# routing table then lives in this file, in git, reviewed like everything else,
+# instead of in the Cloudflare dashboard where nobody remembers it exists.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-config
+  namespace: probadiess
+data:
+  config.yaml: |
+    # MUST be the tunnel UUID, not its name. With a credentials file and no
+    # cert.pem, cloudflared cannot look a name up through the API and will
+    # fail to start. `cloudflared tunnel list` prints the UUID.
+    tunnel: 6024d2ea-38b4-44d0-8608-1f6fb1640eca
+    credentials-file: /etc/cloudflared/creds/credentials.json
+
+    # metrics and no-autoupdate are passed as CLI flags on the container
+    # instead of living here, because the config file's support for them has
+    # moved around between releases and the flags never have.
+    ingress:
+      # Point at Traefik, not at the app Service, so there is exactly one
+      # ingress story. originServerName makes the SNI match the wildcard cert,
+      # which is what lets this verify TLS properly instead of skipping it.
+      - hostname: probadiess.whatsoever.au
+        service: https://traefik.kube-system.svc.cluster.local:443
+        originRequest:
+          originServerName: probadiess.whatsoever.au
+
+      # admin.probadiess.whatsoever.au is intentionally absent. If it ever
+      # appears here, the admin console is on the public internet.
+      - service: http_status:404
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: cloudflared-creds
+  namespace: probadiess
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: vault-backend
+  target:
+    name: cloudflared-creds
+    creationPolicy: Owner
+  data:
+    - secretKey: credentials.json
+      remoteRef:
+        # Mount-relative, the kv mount is implied. Same shape as Marga's
+        # remoteRef.key: marga/minio.
+        key: probadiess/cloudflared
+        property: credentials.json
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: probadiess
+  labels:
+    app.kubernetes.io/name: cloudflared
+spec:
+  # Two, so a node reboot does not take the site off the internet.
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cloudflared
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cloudflared
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: cloudflared
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cloudflared
+          # Pin an exact tag, never `latest`. 2026.9.0 was the newest release
+          # as of 11 September 2026. Bump deliberately.
+          image: cloudflare/cloudflared:2026.9.0
+          args:
+            - tunnel
+            - --no-autoupdate
+            - --metrics=0.0.0.0:2000
+            - --config=/etc/cloudflared/config/config.yaml
+            - run
+          ports:
+            - name: metrics
+              containerPort: 2000
+          livenessProbe:
+            httpGet: { path: /ready, port: metrics }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /ready, port: metrics }
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cloudflared/config
+              readOnly: true
+            - name: creds
+              mountPath: /etc/cloudflared/creds
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: cloudflared-config
+        - name: creds
+          secret:
+            secretName: cloudflared-creds

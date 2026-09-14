@@ -1,0 +1,36 @@
+# probadiess gets its OWN Flux Kustomization, same reasoning as Marga: a broken
+# probadiess change fails only this reconcile, not the shared cluster-apps one.
+# cluster-apps applies this CR (it lives under ./apps); this CR then reconciles
+# ./apps/probadiess.
+#
+# So in apps/kustomization.yaml add `- probadiess-kustomization.yaml`, NOT a
+# bare `- probadiess`.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: probadiess
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  prune: true
+  wait: true
+  path: ./apps/probadiess
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  # Both deployments must go healthy, so a reconcile that leaves the site
+  # unreachable is reported as failed rather than as applied. cloudflared is
+  # included on purpose: without it there is no public site, which is the whole
+  # point of B-R1-01.
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: probadiess-web
+      namespace: probadiess
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: cloudflared
+      namespace: probadiess
