@@ -28,5 +28,6 @@ spec:
           channel: "#alerts"
           sendResolved: true
           title: '[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
-          text: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}\n{{ end }}'
+          # Double quotes: YAML turns \n into a real newline (single quotes left a literal "\n" in Slack)
+          text: "{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}\n{{ end }}"
 
