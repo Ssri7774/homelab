@@ -1,0 +1,46 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: eso-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack   # Prometheus ruleSelector
+spec:
+  groups:
+    - name: external-secrets
+      rules:
+        # ESO keeps serving the last-synced Secret when a sync fails, so apps
+        # look healthy. This is the signal that a secret has stopped refreshing.
+        # NOTE: ESO only records the failure when it TRIES to sync (refresh is 1h),
+        # so detection can lag by up to the refresh interval. Vault being sealed
+        # is caught much faster by VaultNotReady.
+        - alert: ExternalSecretNotSynced
+          expr: externalsecret_status_condition{condition="Ready", status="False"} == 1
+          for: 10m
+          labels:
+            severity: warning
+            notify: slack
+          annotations:
+            summary: "ExternalSecret {{ $labels.name }} is not syncing"
+            description: "ExternalSecret {{ $labels.name }} (ns {{ or $labels.exported_namespace $labels.namespace }}) has been Ready=False for 10m. Apps keep the last-synced value; new or rotated values are not arriving. Check: kubectl -n <ns> describe externalsecret {{ $labels.name }}"
+        - alert: ClusterSecretStoreNotReady
+          expr: clustersecretstore_status_condition{condition="Ready", status="False"} == 1
+          for: 5m
+          labels:
+            severity: critical
+            notify: slack
+          annotations:
+            summary: "ClusterSecretStore {{ $labels.name }} is not Ready"
+            description: "ESO cannot use ClusterSecretStore {{ $labels.name }} (Vault sealed, unreachable, or Kubernetes auth broken). Every ExternalSecret using it is frozen. Runbook: VAULT-PREREQ.md."
+        # checks-that-cannot-see: if ESO is down or Prometheus stops scraping it,
+        # the two rules above go quiet instead of firing. zitadel-masterkey is
+        # the canary: absent series = cannot see, which is not the same as fine.
+        - alert: ExternalSecretsMetricsMissing
+          expr: absent(externalsecret_status_condition{condition="Ready", name="zitadel-masterkey"})
+          for: 10m
+          labels:
+            severity: critical
+            notify: slack
+          annotations:
+            summary: "Cannot see ESO sync status"
+            description: "Prometheus has no externalsecret_status_condition for zitadel-masterkey for 10m: ESO controller down, ServiceMonitor broken, or the ExternalSecret deleted. Treat secret sync as unknown until checked."

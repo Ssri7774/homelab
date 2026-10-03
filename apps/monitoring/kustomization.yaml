@@ -11,5 +11,6 @@ resources:
   - alertmanager-secret.yaml
   - alertmanager-config.yaml
   - vault-alerts.yaml
+  - eso-alerts.yaml
   - grafana-secret.yaml
 

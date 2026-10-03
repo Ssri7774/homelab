@@ -18,3 +18,13 @@ spec:
   values:
     installCRDs: true
     fullnameOverride: "external-secrets"
+    # B-R1-VAULT 2c: let Prometheus scrape ESO's controller metrics
+    # (externalsecret_status_condition etc. on :8080). The release label is what
+    # kube-prometheus-stack's serviceMonitorSelector matches.
+    metrics:
+      service:
+        enabled: true
+    serviceMonitor:
+      enabled: true
+      additionalLabels:
+        release: kube-prometheus-stack
