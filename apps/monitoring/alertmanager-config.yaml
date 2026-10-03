@@ -7,19 +7,43 @@ metadata:
     alertmanagerConfig: slack
 spec:
   route:
-    receiver: slack
-    # Only alerts that opt in reach Slack. Without this, matcherStrategy None
-    # would forward every default kube-prometheus-stack alert (k3s fires several
-    # false positives) and a noisy channel gets muted, which is the void again.
-    matchers:
-      - name: notify
-        value: slack
-        matchType: "="
+    # Top route has no matchers, so every alert enters this tree; anything that
+    # matches no child below goes to "null". Children are checked in order.
+    receiver: "null"
     groupBy: ["alertname"]
-    groupWait: 30s
-    groupInterval: 5m
-    repeatInterval: 1h
+    routes:
+      # B-R1-VAULT 2d, dead man's switch: the always-firing Watchdog alert pings
+      # healthchecks.io about every 2 min. If Prometheus, rule evaluation,
+      # Alertmanager, hp-master or the internet dies, the pings stop and
+      # healthchecks.io notifies Sri by email + its own Slack integration,
+      # outside the homelab. Re-run the overdue test after ANY Alertmanager change.
+      - receiver: healthchecks
+        matchers:
+          - name: alertname
+            value: Watchdog
+            matchType: "="
+        groupWait: 0s
+        groupInterval: 1m
+        repeatInterval: 2m
+      # Only alerts that opt in reach Slack. Forwarding every default
+      # kube-prometheus-stack alert (k3s fires several false positives) would get
+      # the channel muted, which is the void again.
+      - receiver: slack
+        matchers:
+          - name: notify
+            value: slack
+            matchType: "="
+        groupWait: 30s
+        groupInterval: 5m
+        repeatInterval: 1h
   receivers:
+    - name: "null"
+    - name: healthchecks
+      webhookConfigs:
+        - urlSecret:
+            name: alertmanager-slack-secret
+            key: healthchecks_ping_url
+          sendResolved: false
     - name: slack
       slackConfigs:
         - apiURL:
