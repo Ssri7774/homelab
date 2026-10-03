@@ -1,0 +1,34 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vault-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack   # Prometheus ruleSelector
+spec:
+  groups:
+    - name: vault
+      rules:
+        # The Vault chart's readiness probe runs `vault status`, which exits
+        # non-zero while SEALED. So readiness is a seal signal that needs no
+        # change to Vault (no telemetry block, no restart).
+        - alert: VaultNotReady
+          expr: kube_pod_status_ready{namespace="vault", pod="vault-vault-0", condition="true"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            notify: slack
+          annotations:
+            summary: "Vault is not Ready (almost always: SEALED)"
+            description: "vault-vault-0 has failed its readiness probe for 2m. Apps keep running on cached Secrets, but no ExternalSecret can refresh. Unseal by hand: VAULT-PREREQ.md, recovery runbook."
+        # checks-that-cannot-see: if the readiness series disappears (pod gone,
+        # kube-state-metrics down), "== 0" can never fire. Absent is not healthy.
+        - alert: VaultReadinessUnknown
+          expr: absent(kube_pod_status_ready{namespace="vault", pod="vault-vault-0", condition="true"})
+          for: 5m
+          labels:
+            severity: critical
+            notify: slack
+          annotations:
+            summary: "Cannot see whether Vault is sealed"
+            description: "Prometheus has no readiness data for vault-vault-0 for 5m. Treat as sealed until checked: kubectl -n vault exec vault-vault-0 -- vault status"

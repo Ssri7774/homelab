@@ -37,6 +37,12 @@ spec:
     alertmanager:
       alertmanagerSpec:
         externalUrl: "http://alertmanager.whatsoever.au"
+        # B-R1-VAULT: the operator default (OnNamespace) silently adds
+        # namespace="monitoring" to every AlertmanagerConfig route, so alerts
+        # from vault/, external-secrets/ etc. went to "null". Opt-in is by the
+        # notify="slack" label instead (see alertmanager-config.yaml).
+        alertmanagerConfigMatcherStrategy:
+          type: None
         alertmanagerConfigSelector:
           matchLabels:
             alertmanagerConfig: slack

@@ -8,6 +8,13 @@ metadata:
 spec:
   route:
     receiver: slack
+    # Only alerts that opt in reach Slack. Without this, matcherStrategy None
+    # would forward every default kube-prometheus-stack alert (k3s fires several
+    # false positives) and a noisy channel gets muted, which is the void again.
+    matchers:
+      - name: notify
+        value: slack
+        matchType: "="
     groupBy: ["alertname"]
     groupWait: 30s
     groupInterval: 5m
@@ -19,6 +26,7 @@ spec:
             name: alertmanager-slack-secret
             key: slack_webhook
           channel: "#alerts"
-          title: '{{ .GroupLabels.alertname }}'
-          text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+          sendResolved: true
+          title: '[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
+          text: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}\n{{ end }}'
 
