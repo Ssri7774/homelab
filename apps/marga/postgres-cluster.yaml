@@ -13,6 +13,40 @@ spec:
 
   primaryUpdateStrategy: unsupervised
 
+  # --- B-R1-08 NEW: keep bind parameters out of the server log --------------
+  # The pgcrypto field key travels as a BIND PARAMETER on every statement that
+  # touches case_file.visa_type or client.mobile (lib/field-crypto.ts, and
+  # scripts/migrate.mjs for migration 0008). Nothing interpolates it into
+  # statement text, so "the key is never in the log" rests entirely on the
+  # server not logging parameters.
+  #
+  # log_parameter_max_length is the ONE setting that caps every
+  # parameter-logging path at once: log_statement='all',
+  # log_min_duration_statement=0, log_min_duration_sample, auto_explain. At 0,
+  # parameters are never written to the log whatever else someone turns on
+  # while debugging an unrelated problem six months from now.
+  #
+  # It is set HERE and not in the app because its GUC context is `superuser`:
+  # marga_app cannot set it, so no amount of application code makes this true.
+  # Measured before this change: setting=-1, boot_val=-1, source=default on
+  # both instances (-1 means "log the parameter in full").
+  #
+  # COST, recorded rather than buried: no log line on this cluster will ever
+  # show bind parameter values again, so debugging a parameterised statement
+  # means getting the values from the application side. That is the deliberate
+  # trade against a cluster where one debug setting writes the encryption key
+  # into a log file nobody reads.
+  #
+  # log_parameter_max_length_on_error already defaults to 0 and is deliberately
+  # NOT set here - scripts/crypto-invariants.mjs asserts it, so if anyone ever
+  # changes it the check fails and says so.
+  #
+  # SIGHUP reload, not a restart: confirmed on the rig (pending_restart=false)
+  # and to be confirmed on both instances after this applies.
+  postgresql:
+    parameters:
+      log_parameter_max_length: "0"
+
   storage:
     # synology-iscsi-ext4 = the iSCSI CSI class WITH an explicit fsType (ext4).
     # The default "synology-iscsi-storage" sets no fsType, so provisioned PVs
