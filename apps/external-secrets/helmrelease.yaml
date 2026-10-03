@@ -21,9 +21,9 @@ spec:
     # B-R1-VAULT 2c: let Prometheus scrape ESO's controller metrics
     # (externalsecret_status_condition etc. on :8080). The release label is what
     # kube-prometheus-stack's serviceMonitorSelector matches.
-    metrics:
-      service:
-        enabled: true
+    # In chart 0.9.11, serviceMonitor.enabled renders its OWN external-secrets-metrics
+    # Service; also setting metrics.service.enabled renders a second one with the
+    # same name and the upgrade fails ("already registered id"). Use only this.
     serviceMonitor:
       enabled: true
       additionalLabels:
