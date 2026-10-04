@@ -17,6 +17,7 @@ resources:
   - deployment.yaml
   - service.yaml
   - ingress.yaml
+  - networkpolicy.yaml          # B-R1-11: default-deny + explicit allows
 
 # Pin the image in ONE place. Promoting a build = a reviewed one-line change to
 # newTag here (the founder deploy gate). Revert the commit to roll back.

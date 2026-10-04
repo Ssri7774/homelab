@@ -1,0 +1,214 @@
+# B-R1-11 piece 2: default-deny NetworkPolicy for the `marga` namespace.
+#
+# ENFORCEMENT: k3s's data plane is Flannel, which does not implement
+# NetworkPolicy, BUT k3s ships kube-router's network-policy controller embedded
+# and enabled unless the server runs with --disable-network-policy.
+# qc/live/01-netpol-enforcement-probe.sh proves enforcement empirically (a deny
+# must block a flow that worked seconds earlier, ingress and egress, plus the
+# post-DNAT ipBlock match the API rule depends on) BEFORE this file is
+# deployed. If it does not print VERDICT ENFORCED, this file must not ship: a
+# policy the CNI ignores is a check that cannot see.
+#
+# SHAPE: deny everything in and out, then allow exactly these flows.
+#
+#   ingress  tailscale proxy for Ingress marga (ns tailscale) -> marga-web :3000
+#   egress   every pod                -> CoreDNS (kube-system) :53 udp+tcp
+#   egress   marga-web                -> marga-pg :5432
+#   egress   marga-web                -> zitadel-proxy (ns zitadel) :8443
+#   egress   marga-web                -> homelab-minio (ns milvus-operator) :9000   (*)
+#   CNPG pods (any cnpg.io/cluster, incl. join/restore jobs) <-> each other :5432 :8000
+#   ingress  cnpg-system (operator)   -> marga-pg :8000   (instance manager status)
+#   ingress  monitoring (Prometheus)  -> marga-pg :9187   (metrics, backup alerts)
+#   egress   marga-pg                 -> kube-apiserver :6443 (instance manager +
+#                                        barman plugin sidecar talk to the API)
+#   egress   marga-pg                 -> garage (ns marga-backup) :8443 (WAL/base backups)
+#
+# (*) NOT in the ticket's list, and needed: /api/health (the readiness probe)
+#     returns 503 unless BOTH Postgres AND MinIO answer (lib/checks.ts). Without
+#     this allow every marga-web pod goes unready the moment it next probes
+#     MinIO on a new connection = full outage. Remove it only together with
+#     dropping checkMinio() from readiness.
+#
+# NOT NEEDED, and therefore denied:
+#   * marga -> Vault. The app never talks to Vault. ESO (ns external-secrets)
+#     reads Vault and writes Secrets through the API; no packet to or from a
+#     marga pod is involved.
+#   * marga-web -> kube-apiserver (automountServiceAccountToken: false).
+#   * anything -> the internet / tailnet. The OIDC issuer host resolves
+#     in-cluster to zitadel-proxy (apps/coredns-custom).
+#
+# PORTS ARE POD PORTS. NetworkPolicy matches after the Service DNAT, so the
+# zitadel-proxy rule says 8443 (the pod port), not 443 (the Service port), and
+# garage says 8443, not 443.
+#
+# Every object carries marga.platform/control=b-r1-11-netpol so the break-glass
+# in ROLLBACK.md can delete them all with one selector.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: marga
+  labels: {marga.platform/control: b-r1-11-netpol}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: marga
+  labels: {marga.platform/control: b-r1-11-netpol}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: marga-web-ingress
+  namespace: marga
+  labels: {marga.platform/control: b-r1-11-netpol}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: marga-web}
+  policyTypes: [Ingress]
+  ingress:
+    # ONLY the Tailscale operator's proxy for Ingress marga/marga. Not the whole
+    # tailscale namespace: a Connector (subnet router), egress proxy or another
+    # app's ingress proxy also lives there, and admitting those would let
+    # tailnet traffic that the tag:marga ACL never allowed reach the app.
+    # 00-discovery G5 hard-gates that these labels are on the live proxy pod;
+    # if G5 fails, do not deploy (fallback in the G5 message).
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: tailscale}
+          podSelector:
+            matchLabels:
+              tailscale.com/parent-resource: marga
+              tailscale.com/parent-resource-ns: marga
+              tailscale.com/parent-resource-type: ingress
+      ports:
+        - {protocol: TCP, port: 3000}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: marga-web-egress
+  namespace: marga
+  labels: {marga.platform/control: b-r1-11-netpol}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: marga-web}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {cnpg.io/cluster: marga-pg}
+      ports:
+        - {protocol: TCP, port: 5432}
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: zitadel}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: zitadel-proxy}
+      ports:
+        - {protocol: TCP, port: 8443}
+    # Readiness dependency, see header (*).
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: milvus-operator}
+      ports:
+        - {protocol: TCP, port: 9000}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: marga-pg-ingress
+  namespace: marga
+  labels: {marga.platform/control: b-r1-11-netpol}
+spec:
+  # Every CNPG pod in the namespace (cnpg.io/cluster Exists), not just
+  # marga-pg: a restore or PITR cluster created during an incident (e.g.
+  # marga-pg-restore) must get the same plumbing, or recovery fails exactly
+  # when it is needed. marga-web's own egress stays pinned to marga-pg.
+  podSelector:
+    matchExpressions:
+      - {key: cnpg.io/cluster, operator: Exists}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: marga-web}
+      ports:
+        - {protocol: TCP, port: 5432}
+    # Instances replicate from each other (5432); join/initdb/restore job pods
+    # carry a cnpg.io/cluster label too.
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: cnpg.io/cluster, operator: Exists}
+      ports:
+        - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 8000}
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: cnpg-system}
+      ports:
+        - {protocol: TCP, port: 8000}
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: monitoring}
+      ports:
+        - {protocol: TCP, port: 9187}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: marga-pg-egress
+  namespace: marga
+  labels: {marga.platform/control: b-r1-11-netpol}
+spec:
+  podSelector:                 # every CNPG pod, see marga-pg-ingress
+    matchExpressions:
+      - {key: cnpg.io/cluster, operator: Exists}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - {key: cnpg.io/cluster, operator: Exists}
+      ports:
+        - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 8000}
+    # kube-apiserver. kube-router evaluates egress after kube-proxy's DNAT, so
+    # the real destination is the k3s server's node IP on 6443 (hp-master,
+    # 192.168.4.140; 00-discovery G4 must show `kubectl get endpoints kubernetes`
+    # = exactly this, and 01-probe's ipBlock test proves the post-DNAT match).
+    # hp-master is on wifi: if its address ever changes, CNPG and Zitadel lose
+    # the API silently. Keep a DHCP reservation and re-run G4 after network work. The ClusterIP:443 entry covers the pre-DNAT view and
+    # costs nothing.
+    - to:
+        - ipBlock: {cidr: 192.168.4.140/32}
+      ports:
+        - {protocol: TCP, port: 6443}
+    - to:
+        - ipBlock: {cidr: 10.43.0.1/32}
+      ports:
+        - {protocol: TCP, port: 443}
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: marga-backup}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: garage}
+      ports:
+        - {protocol: TCP, port: 8443}
