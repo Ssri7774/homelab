@@ -20,6 +20,11 @@ spec:
   imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
   primaryUpdateStrategy: unsupervised
+  # B-R1-09: hand the primary role to the already-updated replica instead of
+  # restarting the primary in place. Measured on marga-pg 4 Oct: the default
+  # (restart) held the primary down for minutes during the plugin rollout. For
+  # zitadel that is "nobody can log in", so switch over (seconds) instead.
+  primaryUpdateMethod: switchover
 
   # Zitadel's setup Admin needs a privileged login to CREATE DATABASE / CREATE
   # ROLE. Enable the superuser secret for exactly that (setup-time only).
@@ -63,5 +68,11 @@ spec:
   monitoring:
     enablePodMonitor: true
 
-  # Backups NOT configured here - offsite AU backup + tested restore is B-R1-09,
-  # and it must cover BOTH marga-pg and zitadel-pg before go-live.
+  # B-R1-09: continuous WAL archiving + base backups through the Barman Cloud
+  # plugin to ObjectStore zitadel-pg-store (backup.yaml). See marga-pg for the
+  # "archived_count rose while archiving to nowhere" finding.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: zitadel-pg-store
