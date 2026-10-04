@@ -11,7 +11,7 @@ metadata:
   namespace: marga
 spec:
   refreshInterval: 1h
-  secretStoreRef: {kind: ClusterSecretStore, name: vault-backend}
+  secretStoreRef: {kind: SecretStore, name: vault-marga}   # B-R1-11: Marga-scoped (was ClusterSecretStore/vault-backend)
   target:
     name: marga-pg-backup-s3
     creationPolicy: Owner

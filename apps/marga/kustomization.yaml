@@ -3,6 +3,8 @@ kind: Kustomization
 namespace: marga
 resources:
   - namespace.yaml
+  - serviceaccount-eso.yaml     # B-R1-11: identity for the Marga-scoped Vault role
+  - secretstore-vault-marga.yaml # B-R1-11: namespaced store, kv/marga/* only
   - externalsecret.yaml
   - externalsecret-oidc.yaml     # B-R1-02: OIDC client creds + session key (Vault)
   - externalsecret-authca.yaml   # B-R1-02: CA to trust the in-cluster TLS hop to the issuer
