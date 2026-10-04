@@ -28,3 +28,5 @@ resources:
   - cert-manager-config-kustomization.yaml
   # probadiess: isolated Flux Kustomization -> ./apps/probadiess (mirror of marga).
   - probadiess-kustomization.yaml
+  # B-R1-09: isolated Flux Kustomization -> ./apps/marga-backup (Garage staging + offsite job).
+  - marga-backup-kustomization.yaml

@@ -1,0 +1,134 @@
+# Garage: the staging S3 store CNPG's barman plugin writes to. Single node,
+# replication_factor 1, on the Synology (synology-iscsi-ext4, Retain).
+# This is DEV-002 condition 3: the READABLE copy stays in AU, here. Only restic
+# ciphertext leaves for Google Drive.
+#
+# Why not MinIO: community edition stopped shipping images Oct 2025 and was
+# archived 25 Apr 2026. Garage v2.3.0 is maintained, ~100 MB RAM.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: garage-data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: synology-iscsi-ext4   # NOT the default class: no fsType there
+  resources:
+    requests:
+      storage: 20Gi   # 25 MB of DBs today; 30d of WAL + base backups, room for R2 docs
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garage-config
+data:
+  garage.toml: |
+    metadata_dir = "/var/lib/garage/meta"
+    data_dir = "/var/lib/garage/data"
+    # sqlite + fsync on both: this box has had repeated hard power loss
+    # (29 Sep outage, power-button seals). LMDB is faster and less crash-safe;
+    # write speed is irrelevant at this size, metadata corruption is not.
+    db_engine = "sqlite"
+    metadata_fsync = true
+    data_fsync = true
+    replication_factor = 1
+    rpc_bind_addr = "127.0.0.1:3901"
+    rpc_public_addr = "127.0.0.1:3901"
+    # rpc_secret comes from env GARAGE_RPC_SECRET (Vault), never in this file.
+
+    [s3_api]
+    # boto3 (barman) and rclone sign for us-east-1 when no region is set, and
+    # Garage REJECTS signatures for any region other than this one. Matching
+    # the client default removes a whole class of "SignatureDoesNotMatch".
+    s3_region = "us-east-1"
+    api_bind_addr = "127.0.0.1:3900"   # plaintext only inside the pod
+    root_domain = ".s3.garage.invalid" # path-style only
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garage-tls-proxy
+data:
+  nginx.conf: |
+    pid /tmp/nginx.pid;
+    events {}
+    http {
+      client_body_temp_path /tmp/client_body;
+      proxy_temp_path /tmp/proxy;
+      access_log off;
+      server {
+        listen 8443 ssl;
+        ssl_certificate     /tls/tls.crt;
+        ssl_certificate_key /tls/tls.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        client_max_body_size 0;          # base backups can be large
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        location / {
+          proxy_pass http://127.0.0.1:3900;
+          proxy_http_version 1.1;
+          # SigV4 signs the Host header: pass it through untouched.
+          proxy_set_header Host $http_host;
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: garage
+  labels: {app.kubernetes.io/name: garage}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}           # RWO volume, single node
+  selector:
+    matchLabels: {app.kubernetes.io/name: garage}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: garage}
+    spec:
+      affinity:
+        nodeAffinity:                  # off the memory-tight control plane
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - {key: node-role.kubernetes.io/control-plane, operator: DoesNotExist}
+      containers:
+        - name: garage
+          image: dxflrs/garage:v2.3.0
+          envFrom:
+            - secretRef: {name: garage-node}
+          volumeMounts:
+            - {name: config, mountPath: /etc/garage.toml, subPath: garage.toml}
+            - {name: data, mountPath: /var/lib/garage}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 512Mi}
+        - name: tls
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - {name: s3-tls, containerPort: 8443}
+          volumeMounts:
+            - {name: proxy-config, mountPath: /etc/nginx/nginx.conf, subPath: nginx.conf}
+            - {name: tls, mountPath: /tls, readOnly: true}
+          readinessProbe:
+            tcpSocket: {port: 8443}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+      volumes:
+        - {name: config, configMap: {name: garage-config}}
+        - {name: proxy-config, configMap: {name: garage-tls-proxy}}
+        - {name: tls, secret: {secretName: garage-tls}}
+        - {name: data, persistentVolumeClaim: {claimName: garage-data}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: garage
+spec:
+  selector: {app.kubernetes.io/name: garage}
+  ports:
+    - {name: https, port: 443, targetPort: s3-tls}

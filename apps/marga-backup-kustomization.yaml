@@ -1,0 +1,28 @@
+# B-R1-09: isolated Flux Kustomization for the backup staging store + offsite
+# job, same pattern as marga/zitadel: a broken backup change fails only this
+# reconcile. Add `- marga-backup-kustomization.yaml` to apps/kustomization.yaml.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: marga-backup
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  prune: true
+  wait: true
+  path: ./apps/marga-backup
+  # Issuer/Certificate need cert-manager's CRDs + webhook. Matters on a rebuild
+  # (today's cluster already has them).
+  dependsOn:
+    - name: cert-manager-config
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: garage
+      namespace: marga-backup

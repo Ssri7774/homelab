@@ -1,0 +1,32 @@
+# TLS for the staging S3 endpoint. 004 says TLS 1.2+ in transit; this stream is
+# the entire database, crossing the flannel network between NAS-hosted VMs.
+# Garage's S3 API has no native TLS, so an nginx sidecar terminates it and
+# Garage itself listens on 127.0.0.1 only (plaintext never leaves the pod).
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: backup-ca
+spec:
+  ca:
+    secretName: backup-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: garage-tls
+spec:
+  secretName: garage-tls
+  # Long-lived ON PURPOSE. nginx loads the cert once at start and does not
+  # notice cert-manager renewing the Secret, so a 90-day cert would silently
+  # serve an expired cert on day 90 and every WAL push would fail. (The backup
+  # alerts would catch that, but a planned failure is still a failure.) 5 years,
+  # under the 10-year CA; add to the GATE rotation-tracking list with
+  # kv/marga/authtls. Renewal = restart the garage pod after cert-manager
+  # renews.
+  duration: 43800h      # 5y
+  renewBefore: 720h     # 30d
+  privateKey: {algorithm: ECDSA, size: 256}
+  dnsNames:
+    - garage.marga-backup.svc
+    - garage.marga-backup.svc.cluster.local
+  issuerRef: {kind: Issuer, name: backup-ca}

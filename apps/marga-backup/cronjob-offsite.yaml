@@ -1,0 +1,113 @@
+# Offsite copy: Garage (readable, AU) -> restic AES-256 -> Google Drive
+# (ciphertext only). Every 6h, so offsite RPO <= 6h; local RPO is the WAL stream.
+#
+# No custom image: an init container drops the rclone binary into a shared
+# volume; the restic container uses it both to pull the staging buckets and as
+# restic's rclone backend for Google Drive.
+#
+# The emptyDir /work holds the READABLE copy for the duration of the job, on
+# the worker's disk (a VM on the NAS: AU). Gone when the pod is deleted.
+#
+# Checks that cannot see, designed out:
+#  - restic happily snapshots an EMPTY directory. So before backing up, assert
+#    each cluster's staging copy contains at least one base backup
+#    (backup.info). Empty source = FAIL, not "success, 0 files".
+#  - The repo is NEVER auto-initialised. A wrong path or a lost repo must fail
+#    loudly; an auto-init would start a fresh empty repo and report success.
+#  - Success is reported OUT of the cluster (healthchecks.io), so a dead
+#    cluster, a suspended CronJob or a deleted namespace all go overdue.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: offsite-backup
+spec:
+  # Committed SUSPENDED: until DEPLOY-NOTES phase 5 creates the restic repo,
+  # every run would fail and page. Phase 5 flips this to false. If that is ever
+  # forgotten, OffsiteBackupMetricsMissing fires (no success ever recorded).
+  suspend: true
+  schedule: "45 */6 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  # Each finished pod's /work emptyDir is a READABLE full copy until the pod
+  # is deleted. Keep one of each for debugging, and let the TTL remove them.
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3600
+      ttlSecondsAfterFinished: 21600   # 6h: gone before the next run
+      template:
+        spec:
+          restartPolicy: Never
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - {key: node-role.kubernetes.io/control-plane, operator: DoesNotExist}
+          # The init container ONLY stages the rclone binary + a writable config.
+          # The sync itself runs in the main container: an init-container
+          # failure would skip the healthchecks /fail ping, and the external
+          # alarm would then wait 7h for "overdue" instead of firing at once.
+          initContainers:
+            - name: tools
+              image: rclone/rclone:1.71
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  cp /config-ro/rclone.conf /config/rclone.conf   # writable: token refresh
+                  cp /config-ro/ca.crt /config/ca.crt
+                  cp "$(command -v rclone)" /tools/rclone
+              volumeMounts:
+                - {name: secret, mountPath: /config-ro, readOnly: true}
+                - {name: config, mountPath: /config}
+                - {name: tools, mountPath: /tools}
+          containers:
+            - name: restic
+              image: restic/restic:0.18.0
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -u
+                  hc() { wget -q -T 15 -O /dev/null "${HC_URL}$1" || echo "healthchecks ping $1 failed"; }
+                  export RESTIC_REPOSITORY="rclone:gdrive:marga-backup-restic"
+                  export RCLONE_CONFIG=/config/rclone.conf
+                  R="restic -o rclone.program=/tools/rclone"
+                  hc /start
+                  ok=1
+                  for b in cnpg-marga cnpg-zitadel; do
+                    /tools/rclone --config "$RCLONE_CONFIG" --ca-cert /config/ca.crt \
+                      sync "garage:$b" "/work/$b" --checksum || { echo "FAIL: rclone sync $b"; ok=0; }
+                  done
+                  for d in cnpg-marga/marga-pg cnpg-zitadel/zitadel-pg; do
+                    if [ -z "$(find "/work/$d/base" -name backup.info 2>/dev/null | head -n1)" ]; then
+                      echo "FAIL: no base backup under /work/$d (empty or missing staging copy)"; ok=0
+                    fi
+                  done
+                  [ "$ok" = 1 ] && $R backup /work --host marga-backup --tag cnpg || ok=0
+                  [ "$ok" = 1 ] && $R forget --host marga-backup --keep-daily 7 --keep-weekly 5 --prune || ok=0
+                  [ "$ok" = 1 ] && $R check || ok=0                     # structure, every run
+                  if [ "$ok" = 1 ] && [ "$(date -u +%u%H)" = "718" ]; then  # Sunday 18:45 UTC run (runs at 00,06,12,18:45)
+                    $R check --read-data-subset=10% || ok=0             # re-download + verify 10% of data
+                  fi
+                  if [ "$ok" = 1 ]; then $R snapshots --latest 1; hc ""; else hc /fail; exit 1; fi
+              env:
+                - name: RESTIC_PASSWORD
+                  valueFrom: {secretKeyRef: {name: offsite-backup, key: RESTIC_PASSWORD}}
+                - name: HC_URL
+                  valueFrom: {secretKeyRef: {name: offsite-backup, key: HC_URL}}
+              volumeMounts:
+                - {name: config, mountPath: /config}
+                - {name: tools, mountPath: /tools}
+                - {name: work, mountPath: /work}
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {memory: 1Gi}
+          volumes:
+            - {name: secret, secret: {secretName: offsite-backup}}
+            - {name: config, emptyDir: {}}
+            - {name: tools, emptyDir: {}}
+            - {name: work, emptyDir: {sizeLimit: 16Gi}}   # >= Garage layout capacity (15G)
