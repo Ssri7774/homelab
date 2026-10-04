@@ -1,0 +1,73 @@
+# B-R1-09: continuous backup of marga-pg via the Barman Cloud plugin to the
+# Garage staging store (ns marga-backup, on the Synology, readable, AU).
+# The Cluster opts in with spec.plugins (see postgres-cluster.PATCH.md).
+#
+# Credentials: Garage key "marga-pg", read+write on bucket cnpg-marga ONLY. It cannot
+# see the other cluster's bucket. Seeded in Vault per VAULT-SEEDING.md.
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: marga-pg-backup-s3
+  namespace: marga
+spec:
+  refreshInterval: 1h
+  secretStoreRef: {kind: ClusterSecretStore, name: vault-backend}
+  target:
+    name: marga-pg-backup-s3
+    creationPolicy: Owner
+    deletionPolicy: Retain      # a sealed Vault must not stop WAL archiving
+    template:
+      engineVersion: v2
+      data:
+        ACCESS_KEY_ID: "{{ .ak }}"
+        ACCESS_SECRET_KEY: "{{ .sk }}"
+        REGION: us-east-1       # must equal Garage s3_region
+        ca.crt: "{{ .ca }}"
+  data:
+    - {secretKey: ak, remoteRef: {key: marga/backup, property: marga_pg_access_key}}
+    - {secretKey: sk, remoteRef: {key: marga/backup, property: marga_pg_secret_key}}
+    - {secretKey: ca, remoteRef: {key: marga/backup, property: ca_crt}}
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: marga-pg-store
+  namespace: marga
+spec:
+  # PLACEHOLDER pending the master session (backup retention is NOT the Code's
+  # 7-year record retention; long backup retention keeps deleted clients alive,
+  # against APP 11.2).
+  retentionPolicy: "30d"
+  configuration:
+    destinationPath: s3://cnpg-marga/
+    endpointURL: https://garage.marga-backup.svc
+    endpointCA: {name: marga-pg-backup-s3, key: ca.crt}
+    s3Credentials:
+      accessKeyId: {name: marga-pg-backup-s3, key: ACCESS_KEY_ID}
+      secretAccessKey: {name: marga-pg-backup-s3, key: ACCESS_SECRET_KEY}
+      region: {name: marga-pg-backup-s3, key: REGION}
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+---
+# Daily base backup. CNPG cron has SIX fields (seconds first) and runs in UTC:
+# 15:15 UTC = 02:15 AEDT / 01:15 AEST. The offsite job runs at :45
+# past hours 0, 6, 12, 18 UTC, so the 18:45 UTC run is the first to ship that
+# day's base backups.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: marga-pg-daily
+  namespace: marga
+spec:
+  schedule: "0 15 15 * * *"
+  immediate: true               # first base backup as soon as this applies
+  backupOwnerReference: self
+  target: primary               # default prefer-standby; primary keeps a restored
+                                # PGDATA free of standby.signal (Drill B starts it
+                                # outside CNPG). Load is irrelevant at this size.
+  cluster: {name: marga-pg}
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io

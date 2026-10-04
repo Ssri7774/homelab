@@ -123,5 +123,14 @@ spec:
   monitoring:
     enablePodMonitor: true            # kube-prometheus-stack picks this up.
 
-  # Backups are intentionally NOT configured here - offsite AU backup + tested
-  # restore is its own ticket (B-R1-09). The .spec.backup block slots in there.
+  # B-R1-09: continuous WAL archiving + base backups through the Barman Cloud
+  # plugin to ObjectStore marga-pg-store (backup.yaml). isWALArchiver makes the
+  # plugin the archive_command target. Until this existed, archive_mode=on with
+  # CNPG's wal-archive accepted every segment and sent it NOWHERE, while
+  # pg_stat_archiver.archived_count kept rising (measured 4 Oct 2026). That
+  # counter is not backup evidence; the plugin metrics are.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: marga-pg-store
