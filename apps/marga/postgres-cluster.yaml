@@ -46,6 +46,20 @@ spec:
   postgresql:
     parameters:
       log_parameter_max_length: "0"
+    # --- B-R1-11 piece 3c: the SERVER refuses unencrypted TCP connections ----
+    # Pieces 3/3b make the clients verify; this makes plaintext impossible
+    # rather than merely unused. CNPG's default pg_hba ends with
+    # `host all all all scram-sha-256`, which ACCEPTS plaintext; without this
+    # line, a dropped PGSSLMODE, an operator-added URI parameter, or a new
+    # consumer would silently fall back to cleartext and nothing would notice.
+    # CNPG inserts user lines AFTER its fixed rules (local peer, hostssl
+    # streaming_replica cert for replication) and BEFORE that default, so
+    # replication (cert over TLS) and the instance manager / exporter / barman
+    # (local socket) are unaffected. pg_hba changes are a reload, not a restart.
+    # It also turns "migrate initContainer exited 0" into proof its session was
+    # TLS. Negative test: qc/live/30-pg-verify-full-negative.sh P7.
+    pg_hba:
+      - hostnossl all all all reject
 
   storage:
     # synology-iscsi-ext4 = the iSCSI CSI class WITH an explicit fsType (ext4).
