@@ -10,6 +10,7 @@ resources:
   - externalsecret-field-key.yaml # B-R1-08: pgcrypto field key (Vault)
   - configmap.yaml
   - postgres-cluster.yaml
+  - podmonitor.yaml              # B-R1-09: CNPG scrape that Prometheus actually selects
   - backup.yaml                 # B-R1-09: backup creds + ObjectStore + ScheduledBackup
   - deployment.yaml
   - service.yaml

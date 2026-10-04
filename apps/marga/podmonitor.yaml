@@ -1,0 +1,29 @@
+# B-R1-09: scrape the CNPG instances of marga-pg.
+#
+# MEASURED 4 Oct 2026: CNPG's own PodMonitor (spec.monitoring.enablePodMonitor)
+# carries only cnpg.io / app.kubernetes.io labels, but this Prometheus selects
+# PodMonitors with release=kube-prometheus-stack. So it was silently ignored
+# from day one: no cnpg_* metric for marga-pg had EVER reached Prometheus (no
+# replication/failover visibility, e.g. the unalerted marga-pg-2 promotion of
+# 22 Aug). This PodMonitor carries the label and is owned in Git. The CNPG
+# generated one is left in place (harmless, unselected); enablePodMonitor is
+# deprecated upstream, so remove it in a later change, not in a backup ticket.
+#
+# The Barman Cloud plugin's backup metrics (barman_cloud_cloudnative_pg_io_*)
+# are served on the same instance metrics port (9187), so this scrape is what
+# makes the backup alerts able to see anything at all.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: marga-pg-scrape
+  namespace: marga
+  labels:
+    release: kube-prometheus-stack     # Prometheus podMonitorSelector
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: marga-pg
+      cnpg.io/podRole: instance
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s

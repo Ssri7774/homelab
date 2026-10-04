@@ -7,6 +7,7 @@ resources:
   - externalsecret-config.yaml
   - externalsecret-authtls.yaml    # in-cluster TLS cert for the OIDC backchannel
   - postgres-cluster.yaml
+  - podmonitor.yaml              # B-R1-09: CNPG scrape that Prometheus actually selects
   - helmrepository.yaml
   - helmrelease.yaml
   - nginx-configmap.yaml
