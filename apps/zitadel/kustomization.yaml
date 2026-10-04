@@ -14,3 +14,4 @@ resources:
   - nginx-configmap.yaml
   - nginx.yaml
   - ingress.yaml
+  - networkpolicy.yaml          # B-R1-11: default-deny + explicit allows

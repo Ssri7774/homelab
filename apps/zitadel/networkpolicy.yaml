@@ -1,0 +1,187 @@
+# B-R1-11 piece 2: default-deny NetworkPolicy for the `zitadel` namespace.
+# Enforcement and port semantics: see apps/marga/networkpolicy.yaml header.
+#
+#   ingress  tailscale proxy for Ingress zitadel (ns tailscale) -> zitadel-proxy :8080
+#   ingress  marga-web (ns marga)     -> zitadel-proxy :8443 (OIDC backchannel,
+#                                        in-cluster TLS hop)
+#   in-namespace: all pods <-> all pods (see below)
+#   egress   every pod                -> CoreDNS :53 udp+tcp
+#   egress   every pod                -> kube-apiserver :6443
+#   ingress  cnpg-system              -> zitadel-pg :8000
+#   ingress  monitoring               -> zitadel-pg :9187
+#   egress   zitadel-pg               -> garage (ns marga-backup) :8443
+#
+# IN-NAMESPACE IS OPEN, deliberately, and is the one place this is not
+# flow-by-flow. The namespace is one trust zone (the IdP and its own database),
+# the chart's pod labels (core, login, init/setup hooks) are chart-owned and
+# change between chart versions, and a wrong guess here is not a degraded
+# feature, it is nobody can log in to Marga. The boundary that matters is the
+# namespace edge, and that is closed. Tighten to per-pod rules later from the
+# labels recorded in 00-discovery G6.
+#
+# API EGRESS IS NAMESPACE-WIDE for the same reason: zitadel-pg's instance
+# manager needs it, and so does the chart's setup hook, which writes the login
+# client's PAT into a Secret with kubectl on every helm upgrade (block it and
+# the NEXT chart upgrade fails, not this deploy - a delayed break). RBAC, not
+# the network, is what limits what those pods may do with the API.
+#
+# NOT ALLOWED: internet egress. If Zitadel has an SMTP provider configured
+# (00-discovery G7), password-reset and verification mail will stop. The commented
+# rule at the bottom is the fix; it is not enabled by default because nothing in
+# Git configures SMTP.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: zitadel
+  labels: {marga.platform/control: b-r1-11-netpol}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: zitadel
+  labels: {marga.platform/control: b-r1-11-netpol}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: zitadel
+  labels: {marga.platform/control: b-r1-11-netpol}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: zitadel-proxy-ingress
+  namespace: zitadel
+  labels: {marga.platform/control: b-r1-11-netpol}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: zitadel-proxy}
+  policyTypes: [Ingress]
+  ingress:
+    # ONLY the Tailscale proxy for Ingress zitadel/zitadel (see the marga file
+    # for why not the whole namespace; 00-discovery G5 hard-gates the labels).
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: tailscale}
+          podSelector:
+            matchLabels:
+              tailscale.com/parent-resource: zitadel
+              tailscale.com/parent-resource-ns: zitadel
+              tailscale.com/parent-resource-type: ingress
+      ports:
+        - {protocol: TCP, port: 8080}
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: marga}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: marga-web}
+      ports:
+        - {protocol: TCP, port: 8443}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-apiserver-egress
+  namespace: zitadel
+  labels: {marga.platform/control: b-r1-11-netpol}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: {cidr: 192.168.4.140/32}   # hp-master, 00-discovery G4
+      ports:
+        - {protocol: TCP, port: 6443}
+    - to:
+        - ipBlock: {cidr: 10.43.0.1/32}
+      ports:
+        - {protocol: TCP, port: 443}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: zitadel-pg-ingress
+  namespace: zitadel
+  labels: {marga.platform/control: b-r1-11-netpol}
+spec:
+  podSelector:                 # every CNPG pod incl. a restore/PITR cluster
+    matchExpressions:
+      - {key: cnpg.io/cluster, operator: Exists}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: cnpg-system}
+      ports:
+        - {protocol: TCP, port: 8000}
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: monitoring}
+      ports:
+        - {protocol: TCP, port: 9187}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: zitadel-pg-egress
+  namespace: zitadel
+  labels: {marga.platform/control: b-r1-11-netpol}
+spec:
+  podSelector:                 # every CNPG pod incl. a restore/PITR cluster
+    matchExpressions:
+      - {key: cnpg.io/cluster, operator: Exists}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: marga-backup}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: garage}
+      ports:
+        - {protocol: TCP, port: 8443}
+# ---
+# Enable ONLY if 00-discovery G7 shows an SMTP provider is configured in Zitadel.
+# apiVersion: networking.k8s.io/v1
+# kind: NetworkPolicy
+# metadata:
+#   name: zitadel-smtp-egress
+#   namespace: zitadel
+#   labels: {marga.platform/control: b-r1-11-netpol}
+# spec:
+#   podSelector: {}        # narrow to the core pods once G6 records their labels
+#   policyTypes: [Egress]
+#   egress:
+#     - to:
+#         - ipBlock:
+#             cidr: 0.0.0.0/0
+#             except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]
+#       ports:
+#         - {protocol: TCP, port: 587}
+#         - {protocol: TCP, port: 465}
