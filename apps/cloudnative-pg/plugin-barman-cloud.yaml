@@ -1,0 +1,30 @@
+# B-R1-09: Barman Cloud plugin (CNPG-I). Replaces the in-tree
+# spec.backup.barmanObjectStore, which is deprecated since CNPG 1.26 and REMOVED
+# in 1.31 (live operator is 1.30.1, the last one that still accepts it).
+#
+# MUST live in the operator's namespace (cnpg-system): the operator discovers
+# plugins there. Needs cert-manager (present, apps/cert-manager) for the mTLS
+# between operator and plugin.
+#
+# Chart 0.8.x = plugin v0.15.x (0.8.1 / v0.15.1 published 30 Sep 2026). Floats on
+# patch like the operator. Same HelmRepository as the operator, no new source.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: plugin-barman-cloud
+  namespace: cnpg-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: cloudnative-pg          # operator + its CRDs first
+  chart:
+    spec:
+      chart: plugin-barman-cloud
+      version: "0.8.x"
+      sourceRef:
+        kind: HelmRepository
+        name: cloudnative-pg
+  install:
+    crds: CreateReplace
+  upgrade:
+    crds: CreateReplace

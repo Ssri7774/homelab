@@ -6,3 +6,4 @@ resources:
   - namespace.yaml
   - helmrepository.yaml
   - helmrelease.yaml
+  - plugin-barman-cloud.yaml   # B-R1-09: Barman Cloud plugin (CNPG-I)
