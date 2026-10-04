@@ -21,10 +21,11 @@ kind: CronJob
 metadata:
   name: offsite-backup
 spec:
-  # Committed SUSPENDED: until DEPLOY-NOTES phase 5 creates the restic repo,
-  # every run would fail and page. Phase 5 flips this to false. If that is ever
-  # forgotten, OffsiteBackupMetricsMissing fires (no success ever recorded).
-  suspend: true
+  # Was committed suspended until the restic repo existed. Repo 7a885617a6
+  # created and first manual run (snapshot 2eec9267, check clean) on
+  # 4 Oct 2026, so the schedule is live. If this is ever set back to true,
+  # OffsiteBackupStale + healthchecks.io overdue will say so.
+  suspend: false
   schedule: "45 */6 * * *"
   timeZone: Etc/UTC
   concurrencyPolicy: Forbid

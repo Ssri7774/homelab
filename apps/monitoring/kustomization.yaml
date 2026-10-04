@@ -12,5 +12,6 @@ resources:
   - alertmanager-config.yaml
   - vault-alerts.yaml
   - eso-alerts.yaml
+  - backup-alerts.yaml           # B-R1-09: backup failure / staleness / cannot-see
   - grafana-secret.yaml
 

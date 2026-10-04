@@ -1,0 +1,119 @@
+# B-R1-09: backup failure / staleness alerts into the PROVEN path
+# (notify: slack -> AlertmanagerConfig child route -> Slack, sendResolved).
+#
+# MEASURED 4 Oct 2026 (after the PodMonitor fix; before it NO cnpg_* metric
+# was scraped at all):
+#  - barman_cloud_cloudnative_pg_io_* labels: namespace, pod, job, instance,
+#    container, endpoint. NO `cluster` label (cnpg_collector_up has one).
+#  - Primary AND replica both report them, with identical values.
+#  - last_failed_backup_timestamp = 0 when the plugin has never failed (the
+#    pre-sidecar "plugin not available" Backup never reached the plugin, so it
+#    does not count). Rule 2 (failed > available) is therefore false at rest.
+#  - cnpg_pg_stat_archiver_failed_count is reported by the PRIMARY only.
+#  - zitadel had no barman metric until its own phase 4, so this file is
+#    pushed only AFTER zitadel is wired (else BackupMetricsMissing fires).
+# max by (namespace) is correct for all of the above.
+#
+# Every "value" rule has an absent() twin: the question for each check is
+# "what does this return when the thing it watches is ABSENT?".
+# And note: the old cnpg_collector_last_*_backup_timestamp metrics still exist
+# under the plugin but are FROZEN (stale or 0). Never alert on them.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: backup-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: marga-backup
+      rules:
+        # 1. Base backup too old. Daily schedule, so 26h = one missed run + slack.
+        - alert: PostgresBaseBackupStale
+          expr: |
+            time() - max by (namespace) (
+              barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace=~"marga|zitadel"}
+            ) > 26 * 3600
+          for: 10m
+          labels: {severity: critical, notify: slack}
+          annotations:
+            summary: "{{ $labels.namespace }}: newest base backup is older than 26h"
+            description: "The daily ScheduledBackup has not produced a backup. Check: kubectl -n {{ $labels.namespace }} get backups --sort-by=.metadata.creationTimestamp | tail -3"
+
+        # 2. The newest backup attempt failed (failure newer than last success).
+        - alert: PostgresBaseBackupFailed
+          expr: |
+            max by (namespace) (barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace=~"marga|zitadel"})
+              > max by (namespace) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace=~"marga|zitadel"})
+          for: 5m
+          labels: {severity: critical, notify: slack}
+          annotations:
+            summary: "{{ $labels.namespace }}: the latest base backup FAILED"
+            description: "kubectl -n {{ $labels.namespace }} describe backup <newest>; check Garage: kubectl -n marga-backup get pods"
+
+        # 3. Cannot see backup state at all for a cluster.
+        - alert: PostgresBackupMetricsMissing
+          expr: |
+            absent(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="marga"})
+            or
+            absent(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="zitadel"})
+          for: 30m
+          labels: {severity: critical, notify: slack}
+          annotations:
+            summary: "Cannot see backup state for a Postgres cluster"
+            description: "No plugin backup metric for marga and/or zitadel for 30m. Treat as NOT backed up until checked (plugin sidecar gone, PodMonitor broken, or no backup ever taken)."
+
+        # 4. WAL archiving failing. With the plugin as archiver this counter is
+        #    real (before B-R1-09 it counted pushes to nowhere). Do NOT alert on
+        #    seconds-since-last-archival: measured 4 Oct, both DBs idle for 14h+
+        #    with no WAL to archive, so age is not a fault signal here.
+        - alert: PostgresWalArchivingFailing
+          expr: |
+            max by (namespace) (increase(cnpg_pg_stat_archiver_failed_count{namespace=~"marga|zitadel"}[15m])) > 0
+          for: 5m
+          labels: {severity: critical, notify: slack}
+          annotations:
+            summary: "{{ $labels.namespace }}: WAL archiving to Garage is failing"
+            description: "WAL is piling up on the primary's volume. Point-in-time recovery has a hole from now until this resolves."
+
+        - alert: PostgresWalArchiverMetricsMissing
+          expr: |
+            absent(cnpg_pg_stat_archiver_failed_count{namespace="marga"})
+            or
+            absent(cnpg_pg_stat_archiver_failed_count{namespace="zitadel"})
+          for: 30m
+          labels: {severity: critical, notify: slack}
+          annotations:
+            summary: "Cannot see WAL archiving state for a Postgres cluster"
+            description: "cnpg_pg_stat_archiver_failed_count is missing for marga and/or zitadel, so PostgresWalArchivingFailing can never fire. Check the PodMonitor and the CNPG default monitoring queries."
+
+        # 5. Offsite copy stale. Every 6h, so 7h = one missed run + slack.
+        - alert: OffsiteBackupStale
+          expr: |
+            time() - kube_cronjob_status_last_successful_time{namespace="marga-backup", cronjob="offsite-backup"} > 7 * 3600
+          for: 10m
+          labels: {severity: critical, notify: slack}
+          annotations:
+            summary: "Offsite (Google Drive) backup has not succeeded in 7h"
+            description: "kubectl -n marga-backup get jobs --sort-by=.metadata.creationTimestamp | tail -3; logs of the newest job's restic container."
+
+        - alert: OffsiteBackupMetricsMissing
+          expr: absent(kube_cronjob_status_last_successful_time{namespace="marga-backup", cronjob="offsite-backup"})
+          for: 8h      # absent until the first success, so longer than one period
+          labels: {severity: critical, notify: slack}
+          annotations:
+            summary: "Cannot see the offsite backup job at all"
+            description: "CronJob marga-backup/offsite-backup has never succeeded, was deleted, or kube-state-metrics is down."
+
+        # 6. Staging store down. Caught by 2 and 4 eventually; this is faster
+        #    and names the cause.
+        - alert: BackupStagingStoreDown
+          expr: |
+            kube_deployment_status_replicas_available{namespace="marga-backup", deployment="garage"} < 1
+            or absent(kube_deployment_status_replicas_available{namespace="marga-backup", deployment="garage"})
+          for: 10m
+          labels: {severity: critical, notify: slack}
+          annotations:
+            summary: "Backup staging store (Garage) is down"
+            description: "WAL archiving and base backups for marga and zitadel cannot succeed. kubectl -n marga-backup get pods"
