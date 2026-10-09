@@ -5,6 +5,9 @@ metadata:
   name: marga-config
   namespace: marga
 data:
+  # B-R1-13: lead with Report-Only. Remove this key to ENFORCE, then
+  # rollout restart marga-web (envFrom is read only at pod start).
+  CSP_MODE: "report-only"
   # MinIO = the Milvus-bundled "homelab-minio" in the milvus-operator namespace
   # (the only MinIO in the cluster; confirmed via kubectl get svc). Reachability
   # is checked credential-free via /minio/health/live. NOTE (R2 / gate): this
