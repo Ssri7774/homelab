@@ -19,6 +19,24 @@ spec:
     spec:
       # These pods never call the K8s API - don't hand them a token.
       automountServiceAccountToken: false
+      # B-R1-15: never schedule onto the control-plane node (hp-master). Its
+      # kubelet cannot resolve the internal registry (`lookup
+      # forgejo.whatsoever.au: no such host`, B-R1-11), so any marga-web pod
+      # placed there, including a rollout's surge pod, sits in
+      # Init:ImagePullBackOff, which is why rollouts needed `kubectl cordon
+      # hp-master`. It is also the wifi-linked, memory-tight node. Same rule as
+      # marga-pg (postgres-cluster.yaml): the workers carry no worker label,
+      # so exclude the control-plane role rather than require a label that
+      # does not exist. REQUIRED, not preferred: with "preferred" the
+      # scheduler may still pick hp-master when the workers are tight, which
+      # is exactly the case a rollout surge creates.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001
