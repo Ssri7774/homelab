@@ -12,6 +12,16 @@ spec:
   imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
   primaryUpdateStrategy: unsupervised
+  # B-R1-15: when the primary's pod has to be replaced (CNPG/image/plugin
+  # update), promote the already-updated standby and THEN restart the old
+  # primary, instead of restarting the primary in place. The CNPG default is
+  # `restart`, which is what turned the 4 Oct barman-plugin roll into a
+  # marga-pg outage; zitadel-pg already runs switchover (measured ~20 s).
+  # Operator behaviour only: no change to the instance pods, no restart.
+  # CONSTRAINT (CNPG CRD): with switchover the operator REJECTS a single update
+  # that changes imageName AND postgresql.parameters together. Change one,
+  # let it roll, then the other.
+  primaryUpdateMethod: switchover
 
   # --- B-R1-08 NEW: keep bind parameters out of the server log --------------
   # The pgcrypto field key travels as a BIND PARAMETER on every statement that
@@ -134,8 +144,12 @@ spec:
     limits:
       memory: 512Mi
 
-  monitoring:
-    enablePodMonitor: true            # kube-prometheus-stack picks this up.
+  # B-R1-15: no `monitoring.enablePodMonitor`. The PodMonitor CNPG generated
+  # from it was never selected (no release=kube-prometheus-stack label), so it
+  # scraped nothing and only duplicated podmonitor.yaml's `marga-pg-scrape`,
+  # which is the one Prometheus actually uses. With the flag off the operator
+  # deletes the PodMonitor it owns. The exporter on :9187 is unaffected: it runs
+  # whatever this flag says.
 
   # B-R1-09: continuous WAL archiving + base backups through the Barman Cloud
   # plugin to ObjectStore marga-pg-store (backup.yaml). isWALArchiver makes the

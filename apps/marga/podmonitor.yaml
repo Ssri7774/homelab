@@ -5,9 +5,9 @@
 # PodMonitors with release=kube-prometheus-stack. So it was silently ignored
 # from day one: no cnpg_* metric for marga-pg had EVER reached Prometheus (no
 # replication/failover visibility, e.g. the unalerted marga-pg-2 promotion of
-# 22 Aug). This PodMonitor carries the label and is owned in Git. The CNPG
-# generated one is left in place (harmless, unselected); enablePodMonitor is
-# deprecated upstream, so remove it in a later change, not in a backup ticket.
+# 22 Aug). This PodMonitor carries the label and is owned in Git, and since
+# B-R1-15 it is the ONLY PodMonitor for marga-pg: enablePodMonitor (deprecated
+# upstream) is off, so the unselected CNPG-generated duplicate is gone.
 #
 # The Barman Cloud plugin's backup metrics (barman_cloud_cloudnative_pg_io_*)
 # are served on the same instance metrics port (9187), so this scrape is what
