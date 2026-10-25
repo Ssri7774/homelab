@@ -10,6 +10,7 @@ resources:
   - externalsecret-authca.yaml   # B-R1-02: CA to trust the in-cluster TLS hop to the issuer
   - externalsecret-app-role.yaml # B-R1-03: marga_app password + DATABASE_URL (Vault)
   - externalsecret-field-key.yaml # B-R1-08: pgcrypto field key (Vault)
+  - externalsecret-doc-kek.yaml  # B-R2-DOCS D1: document KEK (Vault kv/marga/doc-kek); NOT mounted in any pod until D3
   - configmap.yaml
   - postgres-cluster.yaml
   - podmonitor.yaml              # B-R1-09: CNPG scrape that Prometheus actually selects

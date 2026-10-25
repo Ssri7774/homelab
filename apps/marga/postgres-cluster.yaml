@@ -137,6 +137,41 @@ spec:
         passwordSecret:
           name: marga-app-role     # produced by externalsecret-app-role.yaml
 
+      # --- B-R2-DOCS D1: the owner of release_document_key() ----------------
+      # The ONLY path to a document's wrapped data key is the SECURITY DEFINER
+      # function release_document_key() (migration 0010). It runs as THIS role,
+      # so this role must be able to do nothing else: no login, no password, no
+      # attributes, and - the one that matters - NO memberships.
+      #
+      # inRoles: [] is deliberate and load-bearing. CNPG's inRoles lists the
+      # roles this role JOINS, so the `inRoles: [marga]` spelling in the
+      # approved design would make marga_doc_keys a member OF the table owner
+      # and hand it every owner privilege (DELETE on audit_log, SELECT on
+      # client, UPDATE on wrapped_dek - measured on PostgreSQL 16), while still
+      # not letting the migration hand it ownership of the function. Migration
+      # 0010's precheck and assert_audit_integrity() both refuse any membership.
+      #
+      # The membership that IS needed runs the other way (the migration owner
+      # must be able to SET ROLE to this role to make it the function's owner),
+      # and CNPG cannot declare it without managing `marga` itself. It is one
+      # superuser statement, run once before the 0010 deploy:
+      #   GRANT marga_doc_keys TO marga WITH INHERIT FALSE, SET TRUE;
+      # INHERIT FALSE so the owner does not inherit this role's SELECT policy on
+      # document. 0010's precheck refuses to run without it, naming the fix.
+      - name: marga_doc_keys
+        ensure: present
+        comment: "NOLOGIN owner of release_document_key() - the only path to a document key (B-R2-DOCS D1)"
+        login: false
+        superuser: false
+        bypassrls: false
+        createdb: false
+        createrole: false
+        replication: false
+        inherit: true             # irrelevant with no memberships; the default
+        inRoles: []
+        connectionLimit: 0        # NOLOGIN already; belt and braces
+        disablePassword: true     # no password, ever
+
   resources:
     requests:
       cpu: 100m
