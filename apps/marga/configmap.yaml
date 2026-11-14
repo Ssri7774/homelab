@@ -28,7 +28,37 @@ data:
   # --- B-R2 documents (non-secret) ---
   # The KEK id new documents are wrapped under (lib/doc-crypto.ts
   # loadKeyring/wrapDek). doc-kek-v2 since B-R2-KEK-ATREST; v1 stays loadable
-  # for unwrap only. Inert until D3 mounts DOC_KEK_V1/V2 from marga-doc-kek
-  # (no code path reads it before then). Rotating = add v<n+1> to Vault +
+  # for unwrap only. D3 mounts DOC_KEK_V1/V2 from marga-doc-kek as files
+  # (DOC_KEK_DIR) and readiness refuses a pod whose volume lacks this id. Rotating = add v<n+1> to Vault +
   # the ExternalSecret, then change THIS value; never reuse or remove an id.
   DOC_KEK_ACTIVE: "doc-kek-v2"
+
+  # --- B-R2-DOCS D3: where the secrets are MOUNTED (paths, not secrets) ---
+  # Every key below is a file on a memory-backed Secret volume, never env
+  # (container env is kept in the spec containerd persists on the node's
+  # disk; B-R2-KEK-ATREST). The app refuses DOC_KEK_V* / DOCS_S3 secrets in
+  # env outright, and document-store-verify fails if any slips back.
+  DOC_KEK_DIR: "/etc/marga/doc-kek"               # DOC_KEK_V1, DOC_KEK_V2
+  FIELD_KEY_FILE: "/etc/marga/field-key/FIELD_KEY"
+  DOCS_S3_DIR: "/etc/marga/docs-s3"               # ACCESS_KEY_ID, SECRET_ACCESS_KEY, ca.crt
+
+  # --- B-R2-DOCS D3: the document store (apps/marga-docs) ---
+  DOCS_S3_ENDPOINT: "https://garage.marga-docs.svc"
+  DOCS_S3_BUCKET: "marga-documents"
+  DOCS_S3_REGION: "us-east-1"                     # = Garage s3_region
+  # The AWS SDK never reads a shared config/credentials file or IMDS: the
+  # client is configured explicitly in lib/doc-store.ts. Belt and braces.
+  AWS_CONFIG_FILE: "/dev/null"
+  AWS_SHARED_CREDENTIALS_FILE: "/dev/null"
+  AWS_EC2_METADATA_DISABLED: "true"
+
+  # Which practices may UPLOAD (lib/doc-upload-policy.ts): comma list of
+  # practice ids, "*" for all, empty for none. D3 ships upload before download
+  # (D4) and before the write-once mirror (D5), so it is switched on for the
+  # QC dummy Practice B ONLY (the fixed id B-R1-16 introduced). Opening it to
+  # the real practice (007e5b9c-ccbb-4b4f-84e0-2e6c8473ccc0) is a FOUNDER
+  # decision and a one-line change here - no new image.
+  DOCS_UPLOAD_PRACTICES: "00000000-0000-4000-8000-0000000000b0"
+  # Uploads are buffered in memory (the envelope needs the length first): one
+  # at a time per pod keeps the worst case inside the memory limit below.
+  DOCS_UPLOAD_CONCURRENCY: "1"

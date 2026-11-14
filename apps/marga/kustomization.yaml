@@ -26,4 +26,4 @@ resources:
 images:
   - name: __IMAGE__
     newName: forgejo.whatsoever.au/ssri7774/marga-platform
-    newTag: f735044671aa7b6590cdea54b1d92b3ea86f844d
+    newTag: a201f0e178f5f16a90442085499ade4cdf8ef476   # B-R2-DOCS D3
