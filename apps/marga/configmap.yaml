@@ -24,3 +24,11 @@ data:
   APP_BASE_URL: "https://marga.tail56799c.ts.net"
   # Idle timeout in minutes (006: 30-60). Enforced app-side in middleware.
   IDLE_TIMEOUT_MIN: "45"
+
+  # --- B-R2 documents (non-secret) ---
+  # The KEK id new documents are wrapped under (lib/doc-crypto.ts
+  # loadKeyring/wrapDek). doc-kek-v2 since B-R2-KEK-ATREST; v1 stays loadable
+  # for unwrap only. Inert until D3 mounts DOC_KEK_V1/V2 from marga-doc-kek
+  # (no code path reads it before then). Rotating = add v<n+1> to Vault +
+  # the ExternalSecret, then change THIS value; never reuse or remove an id.
+  DOC_KEK_ACTIVE: "doc-kek-v2"
