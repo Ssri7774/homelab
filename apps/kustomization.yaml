@@ -30,3 +30,5 @@ resources:
   - probadiess-kustomization.yaml
   # B-R1-09: isolated Flux Kustomization -> ./apps/marga-backup (Garage staging + offsite job).
   - marga-backup-kustomization.yaml
+  # B-R2-DOCS D3: isolated Flux Kustomization -> ./apps/marga-docs (the document store).
+  - marga-docs-kustomization.yaml

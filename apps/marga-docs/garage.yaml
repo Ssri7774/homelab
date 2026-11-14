@@ -1,0 +1,196 @@
+# Garage v2.3.0 (the version marga-backup runs): the dedicated document store.
+# Single node, replication_factor 1, on the Synology (synology-iscsi-ext4,
+# Retain). It only ever receives envelope ciphertext (lib/doc-crypto.ts): the
+# app sends no SSE header (its S3 client refuses one before the network), and
+# Garage's own SSE-S3 is not trusted for anything (it stores plaintext with a
+# 200 - LAYER2 probe P4).
+#
+# Layout + bucket + keys are a one-time operator step (D3 qc/live/30): bucket
+# marga-documents; key marga-web with read+write on it and NOT owner. D5 adds a
+# docs-mirror-ro key (read only) for the immutable mirror job.
+#
+# NOT a readiness dependency of marga-web (DESIGN 2): a store outage degrades
+# uploads, it does not take the CRM out of the Service.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: garage-data
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled   # holds every document
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: synology-iscsi-ext4   # NOT the default class: no fsType there
+  resources:
+    requests:
+      # A practice holds thousands of scans (DESIGN R6). 50Gi is an estimate,
+      # not a measurement; the layout capacity in qc/live/30 is set below it.
+      storage: 50Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garage-config
+data:
+  garage.toml: |
+    metadata_dir = "/var/lib/garage/meta"
+    data_dir = "/var/lib/garage/data"
+    # sqlite + fsync on both, as marga-backup: this box has had hard power loss.
+    db_engine = "sqlite"
+    metadata_fsync = true
+    data_fsync = true
+    replication_factor = 1
+    # Ciphertext does not compress; zstd would only burn CPU. It also keeps a
+    # stray plaintext object greppable on disk, which the QC relies on as a
+    # positive control.
+    compression_level = "none"
+    rpc_bind_addr = "127.0.0.1:3901"
+    rpc_public_addr = "127.0.0.1:3901"
+    # The RPC secret is a FILE on a memory-backed Secret volume, not env
+    # (the D3 rule: env is kept in the spec on the node's disk). Garage
+    # refuses a world-readable secret file; this one is 0440, group fsGroup.
+    rpc_secret_file = "/etc/garage-secret/GARAGE_RPC_SECRET"
+
+    [s3_api]
+    # The app's SDK signs for this region (DOCS_S3_REGION); Garage rejects any other.
+    s3_region = "us-east-1"
+    api_bind_addr = "127.0.0.1:3900"   # plaintext only inside the pod
+    root_domain = ".s3.garage.invalid" # path-style only
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garage-tls-proxy
+data:
+  nginx.conf: |
+    pid /tmp/nginx.pid;
+    error_log stderr warn;   # fd 2 as inherited: nothing is opened by path
+    events {}
+    http {
+      # Every temp path in /tmp (a memory emptyDir): the root filesystem is
+      # read-only, and nginx creates all five at start even if unused.
+      client_body_temp_path /tmp/client_body;
+      proxy_temp_path       /tmp/proxy;
+      fastcgi_temp_path     /tmp/fastcgi;
+      uwsgi_temp_path       /tmp/uwsgi;
+      scgi_temp_path        /tmp/scgi;
+      access_log off;
+      server_tokens off;
+      server {
+        listen 8443 ssl;
+        ssl_certificate     /tls/tls.crt;
+        ssl_certificate_key /tls/tls.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        # One envelope of the 25 MiB cap is 25 MiB + 13 + 16 per 64 KiB
+        # (~25.01 MiB). 26m leaves headroom and refuses anything bigger.
+        client_max_body_size 26m;
+        proxy_request_buffering off;   # stream to Garage; never spool a body
+        proxy_buffering off;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+        location / {
+          proxy_pass http://127.0.0.1:3900;
+          proxy_http_version 1.1;
+          # SigV4 signs the Host header: pass it through untouched.
+          proxy_set_header Host $http_host;
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: garage
+  labels: {app.kubernetes.io/name: garage, app.kubernetes.io/part-of: marga}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}           # RWO volume, single node
+  selector:
+    matchLabels: {app.kubernetes.io/name: garage}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: garage, app.kubernetes.io/part-of: marga}
+    spec:
+      automountServiceAccountToken: false
+      affinity:
+        nodeAffinity:                  # off the memory-tight, wifi control plane
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - {key: node-role.kubernetes.io/control-plane, operator: DoesNotExist}
+      # Unlike marga-backup's Garage (root), this one runs unprivileged with a
+      # read-only root: the PVC is group-owned by fsGroup, Garage writes only
+      # under /var/lib/garage. Proven on the develop rig with these exact
+      # configs (D3 QC-EVIDENCE, "store sidecar under a read-only root").
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch   # do not re-chown 50Gi on every start
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: garage
+          image: dxflrs/garage:v2.3.0
+          env:
+            # Garage refuses any secret file whose mode is not 0600 and calls
+            # group-readable "world-readable". A Secret volume file is owned by
+            # root, so the non-root Garage can only read it through the group
+            # (defaultMode 0440, group = fsGroup 1000): readable by root and
+            # gid 1000, NOT by others. Measured on the rig: without this flag
+            # Garage refuses to start on exactly that 0440 file.
+            - {name: GARAGE_ALLOW_WORLD_READABLE_SECRETS, value: "true"}
+          volumeMounts:
+            - {name: config, mountPath: /etc/garage.toml, subPath: garage.toml}
+            - {name: rpc-secret, mountPath: /etc/garage-secret, readOnly: true}
+            - {name: data, mountPath: /var/lib/garage}
+            - {name: garage-tmp, mountPath: /tmp}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 512Mi}
+        - name: tls
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - {name: s3-tls, containerPort: 8443}
+          volumeMounts:
+            - {name: proxy-config, mountPath: /etc/nginx/nginx.conf, subPath: nginx.conf}
+            - {name: tls, mountPath: /tls, readOnly: true}
+            - {name: nginx-tmp, mountPath: /tmp}
+          readinessProbe:
+            tcpSocket: {port: 8443}
+            periodSeconds: 10
+          securityContext:
+            runAsUser: 101
+            runAsGroup: 101
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+      volumes:
+        - {name: config, configMap: {name: garage-config}}
+        - name: rpc-secret
+          secret:
+            secretName: garage-node
+            defaultMode: 0440
+            items:
+              - {key: GARAGE_RPC_SECRET, path: GARAGE_RPC_SECRET}
+        - {name: proxy-config, configMap: {name: garage-tls-proxy}}
+        - {name: tls, secret: {secretName: garage-tls}}
+        - {name: data, persistentVolumeClaim: {claimName: garage-data}}
+        - {name: garage-tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+        - {name: nginx-tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: garage
+  labels: {app.kubernetes.io/name: garage}
+spec:
+  selector: {app.kubernetes.io/name: garage}
+  ports:
+    - {name: https, port: 443, targetPort: s3-tls}

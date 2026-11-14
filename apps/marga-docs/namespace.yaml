@@ -1,0 +1,19 @@
+# B-R2-DOCS D3: the dedicated document store (B-R2-LAYER2 decision 3c).
+#
+# Its OWN namespace, Garage instance, CA, credentials and NetworkPolicy - not a
+# bucket in marga-backup's Garage. The app's Garage key can delete and
+# overwrite anything in its bucket (Garage has no finer permission: LAYER2
+# probes P10, P11), so the store the app writes to and the copies that protect
+# it must not share an instance, an admin path or a network hole. The
+# read-only `rclone copy --immutable` mirror into marga-backup + the parity
+# alert are D5; the hooks they need are marked "D5" in this folder.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: marga-docs
+  labels:
+    app.kubernetes.io/part-of: marga
+  annotations:
+    # Never pruned by Flux: deleting this namespace would delete the PVC that
+    # holds every document. Removal is a deliberate operator step.
+    kustomize.toolkit.fluxcd.io/prune: disabled

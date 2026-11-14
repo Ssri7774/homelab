@@ -1,0 +1,30 @@
+# TLS for the docs S3 endpoint. Garage's S3 API has no native TLS, so an nginx
+# sidecar terminates it and Garage listens on 127.0.0.1 only (same shape as
+# marga-backup, B-R1-09). What crosses the network is envelope ciphertext
+# either way, but the request signatures, object keys and the fact of every
+# upload are not the overlay's business.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: docs-ca
+spec:
+  ca:
+    secretName: docs-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: garage-tls
+spec:
+  secretName: garage-tls
+  # Long-lived ON PURPOSE (marga-backup's reasoning): nginx loads the cert once
+  # and does not notice a renewal, so a 90-day cert would silently expire
+  # under it. 5 years under the 10-year CA; on the GATE rotation list with
+  # kv/marga/backup and kv/marga/authtls. Renewal = restart the garage pod.
+  duration: 43800h      # 5y
+  renewBefore: 720h     # 30d
+  privateKey: {algorithm: ECDSA, size: 256}
+  dnsNames:
+    - garage.marga-docs.svc
+    - garage.marga-docs.svc.cluster.local
+  issuerRef: {kind: Issuer, name: docs-ca}

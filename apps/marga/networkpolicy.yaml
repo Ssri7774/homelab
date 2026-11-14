@@ -16,6 +16,7 @@
 #   egress   marga-web                -> marga-pg :5432
 #   egress   marga-web                -> zitadel-proxy (ns zitadel) :8443
 #   egress   marga-web                -> homelab-minio (ns milvus-operator) :9000   (*)
+#   egress   marga-web                -> garage (ns marga-docs) :8443   (B-R2-DOCS D3)
 #   CNPG pods (any cnpg.io/cluster, incl. join/restore jobs) <-> each other :5432 :8000
 #   ingress  cnpg-system (operator)   -> marga-pg :8000   (instance manager status)
 #   ingress  monitoring (Prometheus)  -> marga-pg :9187   (metrics, backup alerts)
@@ -129,6 +130,16 @@ spec:
             matchLabels: {kubernetes.io/metadata.name: milvus-operator}
       ports:
         - {protocol: TCP, port: 9000}
+    # B-R2-DOCS D3: the document store (its TLS sidecar's POD port). Exactly
+    # the garage pod in marga-docs; marga-docs's own policy admits only these
+    # pods. Not a readiness dependency.
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: marga-docs}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: garage}
+      ports:
+        - {protocol: TCP, port: 8443}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

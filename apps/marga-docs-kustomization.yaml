@@ -1,0 +1,27 @@
+# B-R2-DOCS D3: isolated Flux Kustomization for the document store, same
+# pattern as marga-backup: a broken store change fails only this reconcile,
+# and marga's own reconcile does not wait on it (the store is not a readiness
+# dependency of marga-web). Listed in apps/kustomization.yaml.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: marga-docs
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  prune: true
+  wait: true
+  path: ./apps/marga-docs
+  dependsOn:
+    - name: cert-manager-config   # Issuer/Certificate need cert-manager's CRDs
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: garage
+      namespace: marga-docs
