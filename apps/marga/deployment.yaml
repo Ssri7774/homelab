@@ -299,6 +299,10 @@ spec:
           # with a 25 MiB upload and a refused 25 MiB + 1 byte one), 0 OOM.
           # One upload per pod at a time (DOCS_UPLOAD_CONCURRENCY). The two
           # 64Mi tmpfs mounts count against this limit too.
+          # B-R2-DOCS D4: a download streams (at most one 64 KiB chunk held per
+          # stage); the same rig run with D4's QC added (upload QC + download
+          # QC with four concurrent 25 MiB downloads + tamper + both
+          # verifiers) peaked at 223 MiB in this 512Mi limit, 0 OOM.
           resources:
             requests:
               cpu: 50m

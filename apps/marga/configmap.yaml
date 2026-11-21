@@ -62,3 +62,19 @@ data:
   # Uploads are buffered in memory (the envelope needs the length first): one
   # at a time per pod keeps the worst case inside the memory limit below.
   DOCS_UPLOAD_CONCURRENCY: "1"
+
+  # B-R2-DOCS D4: downloads STREAM (nothing buffers a document; measured on the
+  # develop rig: +7 MiB in the pod's cgroup across four concurrent 25 MiB
+  # downloads). Each live download holds one docs-store connection (the
+  # client's pool is 8, shared with upload), so at most this many per pod at
+  # once, and at most DOCS_DOWNLOAD_PER_USER per signed-in user so one person
+  # cannot hold them all; beyond either, 503 + Retry-After. Capped at 6 in code.
+  DOCS_DOWNLOAD_CONCURRENCY: "4"
+  DOCS_DOWNLOAD_PER_USER: "2"
+  # A download whose reader pulls nothing for DOCS_DOWNLOAD_IDLE_MS is cut (the
+  # connection is destroyed, never ended), so a stalled or vanished client
+  # cannot hold a slot, a key copy and a store connection. Any download is cut
+  # at DOCS_DOWNLOAD_DEADLINE_MS however it is progressing (30 min = 25 MiB at
+  # about 120 kbit/s).
+  DOCS_DOWNLOAD_IDLE_MS: "60000"
+  DOCS_DOWNLOAD_DEADLINE_MS: "1800000"
