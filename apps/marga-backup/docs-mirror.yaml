@@ -1,0 +1,384 @@
+# B-R2-DOCS D5 (design decision 3c): the write-once mirror of the document
+# store, and the parity alarm. The object-layer equivalent of B-R1-16's REVOKE
+# DELETE: Garage cannot stop the app's key deleting or overwriting an object
+# (LAYER2 P10/P11), so the backstop is a copy the app can neither reach nor
+# change.
+#
+#   source  marga-docs Garage, bucket marga-documents, key docs-mirror-ro
+#           (READ ONLY - this job can read the live store, never change it)
+#   mirror  THIS namespace's Garage (a separate instance, separate CA, separate
+#           credentials), bucket docs-mirror, key docs-mirror-rw
+#
+# Why the app cannot touch the mirror (each proven in the D5 live QC):
+#   * its key (marga-web) does not exist in this Garage;
+#   * its pods have no network path here: ns marga is default-deny egress and
+#     marga-web may reach only marga-pg, zitadel, the milvus MinIO and
+#     marga-docs (apps/marga/networkpolicy.yaml); only the CNPG pods reach this
+#     Garage, for WAL, holding barman keys with no access to docs-mirror;
+#   * the mirror never deletes (rclone copy, not sync) and never overwrites
+#     (--immutable), so even an overwrite of the live copy cannot reach the
+#     first version.
+#
+# Every 5 min (mirror RPO 5 min). A failure - an object overwritten or
+# deleted in the live store, an object without a comparable hash, an object
+# whose BYTES differ from the mirror's (changed in the last 2h here; all objects
+# daily in docs-mirror-full below), an open multipart upload (the app never
+# makes one), either store unreachable - pings healthchecks.io /fail at once (check "Marga docs mirror",
+# period 5 min, grace 10 min) and fails the Job: DocsMirrorFailing in
+# apps/monitoring/backup-alerts.yaml. What it cannot see: an object deleted or
+# overwritten BEFORE its first copy (D5 hand-off residual; a database-vs-store
+# reconciler is the fix).
+# Offsite: docs-mirror is folded into the existing 6-hourly restic job
+# (cronjob-offsite.yaml), so documents leave AU only as restic AES-256 over
+# envelope ciphertext; no document key is in this namespace (DESIGN 3a, DEV-002
+# amendment pending - see the D5 hand-off for what else sits on that Drive).
+#
+# A legitimate removal - the operator purge (ops/purge-documents.sh) or the QC
+# teardown - suspends this CronJob, removes the object from BOTH stores with a
+# just-in-time operator key (ops/docs-store-op.sh), and resumes it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: docs-mirror-script
+data:
+  # The develop rig runs this exact text (D5 qc/local/mirror-run.sh).
+  docs-mirror.sh: |
+    #!/bin/sh
+    # B-R2-DOCS D5: the write-once mirror of the document store, and its parity
+    # check. Runs in the docs-mirror CronJob (ns marga-backup). The develop rig
+    # runs this exact file (qc/local/mirror-run.sh extracts it from the ConfigMap).
+    #
+    #   live   docs:marga-documents   the marga-docs Garage, read with the READ-ONLY
+    #                                 key docs-mirror-ro (it cannot delete or write)
+    #   mirror mirror:docs-mirror     the marga-backup Garage, a separate instance
+    #                                 the app's key does not exist in and the app's
+    #                                 pods cannot reach (ns marga egress policy)
+    #
+    # 1. rclone COPY, never sync: an object deleted from the live store is never
+    #    deleted from the mirror. --immutable: an object that already exists in the
+    #    mirror is never changed; if the live copy no longer matches it, rclone
+    #    fails with "immutable file modified" and the mirror keeps the first
+    #    version. Documents are write-once by construction (a new upload is a new
+    #    id), so neither rule costs anything legitimate.
+    # 2. rclone CHECK, both directions, by size AND hash: an object in the live
+    #    store but not the mirror, in the mirror but not the live store (deleted
+    #    with the app's key), or different in the two (overwritten) fails the run.
+    # Any failure: healthchecks.io /fail (out of the cluster, pages at once) and a
+    # failed Job (DocsMirrorFailing in apps/monitoring/backup-alerts.yaml).
+    #
+    # Object names are p/<uuid>/d/<uuid> and hold no personal information, so the
+    # lines printed below are safe in a log. Nothing here can decrypt anything:
+    # the objects are envelope ciphertext and no key is in this namespace.
+    #
+    # A legitimate removal (the operator purge, the QC teardown) suspends this
+    # CronJob first and removes the object from BOTH stores (ops/docs-store-op.sh),
+    # so parity holds across it.
+    set -u
+    # Nothing from the environment may steer the S3 client: credentials and CA come
+    # from the files above only (AWS_CA_BUNDLE in particular breaks --ca-cert).
+    unset AWS_CA_BUNDLE AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE
+    RC="rclone --config ${RCLONE_CONFIG:-/config/rclone.conf} --ca-cert ${CA_BUNDLE:-/config/ca-bundle.crt} --low-level-retries 3 --retries 1"
+    SRC="docs:${DOCS_BUCKET:-marga-documents}"
+    DST="mirror:${MIRROR_BUCKET:-docs-mirror}"
+    T=${TMPDIR:-/tmp}
+    hc() { [ -n "${HC_URL:-}" ] || return 0; wget -q -T 15 -O /dev/null "${HC_URL}$1" || echo "healthchecks ping $1 failed"; }
+    rm -f "$T/parity" "$T/check.log" "$T/copy.log" "$T/bytes.list" "$T/bytes" "$T/bytes.log" "$T/mpu"   # never read a previous run's files
+    hc /start
+    ok=1; reach=1
+
+    # 0. Both ends answer. An unreachable or missing bucket must FAIL, never read
+    #    as "nothing to copy, parity trivially holds".
+    $RC lsf --max-depth 1 "$SRC" > /dev/null || { echo "FAIL: cannot list the live store ($SRC)"; ok=0; reach=0; }
+    $RC lsf --max-depth 1 "$DST" > /dev/null || { echo "FAIL: cannot list the mirror ($DST)"; ok=0; reach=0; }
+
+    # 1. Copy.
+    copied=0
+    if [ "$ok" = 1 ]; then
+      if $RC copy "$SRC" "$DST" --immutable --checksum --no-update-modtime --stats 0 -v > "$T/copy.log" 2>&1; then
+        copied=1
+        echo "copy: ok ($(grep -c ': Copied' "$T/copy.log") new object(s) mirrored)"
+      else
+        echo "FAIL: copy. An 'immutable file modified' line means an object in the live store CHANGED after it was mirrored (overwritten with the app's key); the mirror kept the original."
+        grep -E 'ERROR|immutable' "$T/copy.log" | sed -E 's/^[0-9\/: ]+//' | head -20
+        ok=0
+      fi
+    fi
+
+    # 2. Parity, both ways (runs even after a failed copy, so the page names every
+    #    divergent object, not just the first). Fatal: '-' (in the mirror, GONE
+    #    from the live store), '*' (DIFFERENT), '!' (unreadable). '+' (in the live
+    #    store, not yet in the mirror) is fatal only if the copy failed: after a
+    #    good copy it can only be an upload that landed between the copy and this
+    #    listing, and the next run mirrors it (review M1: it used to page).
+    if [ "$reach" = 0 ]; then
+      echo "parity: not computed (a store did not answer)"
+    elif ! $RC check "$SRC" "$DST" --combined "$T/parity" > "$T/check.log" 2>&1 && [ ! -s "$T/parity" ]; then
+      echo "FAIL: parity could not be computed"; grep -E 'ERROR|Failed' "$T/check.log" | sed -E 's/^[0-9\/: ]+//' | head -5; ok=0
+    else
+      same=$(grep -c '^=' "$T/parity"); late=$(grep -c '^+' "$T/parity"); bad=$(grep -c '^[-*!]' "$T/parity")
+      [ "$copied" = 1 ] || bad=$((bad + late))
+      # An object with no comparable hash (a multipart upload has no MD5 ETag)
+      # is counted as "identical" by size alone. The app only ever writes single
+      # PUTs (lib/doc-store.ts storeObject), so such an object is itself an
+      # anomaly - a same-size multipart overwrite with the app's key passed the
+      # first version of this script (security review F3). Fatal.
+      nohash=$(grep -o '[0-9][0-9]* hashes could not be checked' "$T/check.log" | head -1 | cut -d' ' -f1)
+      if [ -n "$nohash" ] && [ "$nohash" != 0 ]; then
+        echo "FAIL: $nohash object(s) have no comparable hash (a multipart upload - the app never makes one; overwritten with the app's key?):"
+        $RC lsjson -R --files-only --hash "$SRC" 2>/dev/null | grep '"Path"' | grep -iv '"md5"' | sed -E 's/.*"Path":"([^"]*)".*/  \1/' | head -10
+        bad=$((bad + nohash))
+      fi
+      if [ "$bad" = 0 ]; then
+        echo "parity: ok ($same object(s) identical in the live store and the mirror$([ "$late" -gt 0 ] && echo "; $late uploaded after the copy, mirrored next run"))"
+      else
+        echo "FAIL: parity. '-' = in the mirror but GONE from the live store (deleted with the app's key, or a purge that did not finish); '+' = in the live store, not in the mirror (the copy failed); '*' = DIFFERENT (overwritten); '!' = could not be read."
+        grep -v '^=' "$T/parity" | head -50
+        echo "identical: $same; divergent: $bad"
+        ok=0
+      fi
+    fi
+
+    # 3. BYTES, not hashes (round-2 N1). A multipart overwrite can carry a
+    #    forged x-amz-meta-md5chksum equal to the original's MD5, and rclone then
+    #    reads it as the object's hash: steps 1 and 2 both call it identical.
+    #    An overwrite always gets a fresh SERVER LastModified, which the writer
+    #    cannot set; so every object the live store changed in the last 2 hours
+    #    (24 runs of slack) is compared byte for byte with the mirror. Every
+    #    object is compared once a day by the separate CronJob docs-mirror-full
+    #    (FULL_COMPARE=1), which has its own deadline and its own staleness alert.
+    #    Garage dates a multipart object from when the upload was OPENED (round-3
+    #    R3-1), so an overwrite held open past the window would wait for that
+    #    daily run; step 4 pages on any open multipart upload instead.
+    if [ "$reach" = 1 ]; then
+      if [ "${FULL_COMPARE:-0}" = 1 ]; then
+        scope="all objects (daily full byte compare)"; $RC lsf -R --files-only "$SRC" > "$T/bytes.list" 2>/dev/null || { echo "FAIL: cannot list the live store for the byte compare"; ok=0; }
+      else
+        scope="objects changed in the live store in the last 2h"
+        $RC lsf -R --files-only --use-server-modtime --max-age 2h "$SRC" > "$T/bytes.list" 2>/dev/null || { echo "FAIL: cannot list the live store for the byte compare"; ok=0; }
+      fi
+      n=$(grep -c . "$T/bytes.list" 2>/dev/null || true)
+      if [ "${n:-0}" -gt 0 ]; then
+        $RC check "$SRC" "$DST" --download --files-from "$T/bytes.list" --combined "$T/bytes" > "$T/bytes.log" 2>&1
+        bb=$(grep -c '^[-*!]' "$T/bytes" 2>/dev/null || true); bl=$(grep -c '^+' "$T/bytes" 2>/dev/null || true)
+        [ "$copied" = 1 ] || bb=$(( ${bb:-0} + ${bl:-0} ))
+        if [ ! -s "$T/bytes" ]; then echo "FAIL: byte compare could not run"; ok=0
+        elif [ "${bb:-0}" = 0 ]; then echo "bytes: ok ($n $scope compared byte for byte with the mirror)"
+        else echo "FAIL: byte compare: $bb object(s) DIFFER from the mirror's copy although their hashes matched (forged MD5 metadata on an overwrite?):"; grep '^[-*!]' "$T/bytes" | head -20; ok=0; fi
+      else
+        echo "bytes: nothing to compare ($scope)"
+      fi
+    fi
+
+    # 4. No open multipart upload in the live bucket. The app only ever makes
+    #    single PUTs, so ANY open upload is someone else writing with the app key
+    #    - possibly a held overwrite (round-3 R3-1). The read-only key can list them.
+    if [ "$reach" = 1 ]; then
+      if $RC backend list-multipart-uploads "$SRC" > "$T/mpu" 2>/dev/null; then
+        nm=$(grep -c '"Key"' "$T/mpu" || true)
+        if [ "${nm:-0}" = 0 ]; then echo "uploads: no open multipart upload in the live store"
+        else echo "FAIL: $nm open multipart upload(s) in the live store (the app never makes one - a held overwrite with the app key?):"; grep -E '"Key"|"Initiated"' "$T/mpu" | head -10; ok=0; fi
+      else
+        echo "FAIL: could not list open multipart uploads in the live store"; ok=0
+      fi
+    fi
+
+    if [ "$ok" = 1 ]; then echo "DOCS_MIRROR_OK"; hc ""; exit 0; fi
+    echo "DOCS_MIRROR_FAILED"; hc /fail; exit 1
+---
+# From Vault (ClusterSecretStore, as the rest of this namespace):
+#   kv/marga-docs/mirror   docs_ro_access_key / docs_ro_secret_key  (marga-docs key docs-mirror-ro)
+#                          mirror_access_key  / mirror_secret_key   (this Garage's key docs-mirror-rw)
+#                          hc_url                                   (healthchecks.io "Marga docs mirror")
+#   kv/marga-docs/store    ca_crt  (the marga-docs CA, public half)
+#   kv/marga/backup        ca_crt  (this namespace's CA, public half)
+# NOT under kv/marga/*: namespace marga's SecretStore can read all of
+# kv/marga/*, and the app has no business holding the mirror's write key.
+# (It is readable through the cluster-wide vault-backend store from other
+# namespaces, like every marga-backup secret; a namespace-scoped Vault role
+# is the D3/D5 residual.)
+# Seeded by the D5 bundle's qc/live/20-mirror-keys.sh BEFORE this is pushed.
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: docs-mirror
+spec:
+  refreshInterval: 1h
+  secretStoreRef: {kind: ClusterSecretStore, name: vault-backend}
+  target:
+    name: docs-mirror
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    template:
+      engineVersion: v2
+      data:
+        HC_URL: "{{ .hc_url }}"
+        rclone.conf: |
+          [docs]
+          type = s3
+          provider = Other
+          endpoint = https://garage.marga-docs.svc
+          region = us-east-1
+          access_key_id = {{ .docs_ro_ak }}
+          secret_access_key = {{ .docs_ro_sk }}
+          no_check_bucket = true
+
+          [mirror]
+          type = s3
+          provider = Other
+          endpoint = https://garage.marga-backup.svc
+          region = us-east-1
+          access_key_id = {{ .mirror_ak }}
+          secret_access_key = {{ .mirror_sk }}
+          no_check_bucket = true
+        ca-bundle.crt: |
+          {{ .docs_ca | trim }}
+          {{ .backup_ca | trim }}
+  data:
+    - {secretKey: docs_ro_ak, remoteRef: {key: marga-docs/mirror, property: docs_ro_access_key}}
+    - {secretKey: docs_ro_sk, remoteRef: {key: marga-docs/mirror, property: docs_ro_secret_key}}
+    - {secretKey: mirror_ak,  remoteRef: {key: marga-docs/mirror, property: mirror_access_key}}
+    - {secretKey: mirror_sk,  remoteRef: {key: marga-docs/mirror, property: mirror_secret_key}}
+    - {secretKey: hc_url,     remoteRef: {key: marga-docs/mirror, property: hc_url}}
+    - {secretKey: docs_ca,    remoteRef: {key: marga-docs/store,  property: ca_crt}}
+    - {secretKey: backup_ca,  remoteRef: {key: marga/backup,      property: ca_crt}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: docs-mirror
+spec:
+  schedule: "2-59/5 * * * *"      # every 5 min: an upload deleted or overwritten with the app key
+                                  # before its first copy is the one thing the mirror cannot see,
+                                  # so that window is kept short (security review F3)
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 0             # a divergence must fail loudly, not retry quietly
+      activeDeadlineSeconds: 600
+      ttlSecondsAfterFinished: 7200
+      template:
+        metadata:
+          # marga-docs' NetworkPolicy admits exactly this label from this namespace.
+          labels: {app.kubernetes.io/name: docs-mirror, app.kubernetes.io/part-of: marga}
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - {key: node-role.kubernetes.io/control-plane, operator: DoesNotExist}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: mirror
+              image: rclone/rclone:1.71
+              command: ["/bin/sh", "/scripts/docs-mirror.sh"]
+              env:
+                - {name: RCLONE_CONFIG, value: /config/rclone.conf}
+                - {name: CA_BUNDLE, value: /config/ca-bundle.crt}
+                - {name: TMPDIR, value: /tmp}
+                - {name: HOME, value: /tmp}
+                - name: HC_URL
+                  valueFrom: {secretKeyRef: {name: docs-mirror, key: HC_URL}}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: ["ALL"]}
+              volumeMounts:
+                - {name: script, mountPath: /scripts, readOnly: true}
+                - {name: config, mountPath: /config, readOnly: true}
+                - {name: tmp, mountPath: /tmp}
+              resources:
+                requests: {cpu: 20m, memory: 64Mi}
+                limits: {memory: 256Mi}
+          volumes:
+            - {name: script, configMap: {name: docs-mirror-script}}
+            - name: config
+              secret:
+                secretName: docs-mirror
+                defaultMode: 0444          # read by uid 65534; holds keys only to the two stores, no document key
+                items:
+                  - {key: rclone.conf, path: rclone.conf}
+                  - {key: ca-bundle.crt, path: ca-bundle.crt}
+            - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 32Mi}}
+---
+# The DAILY full byte compare (round-3 R3-1): the same script with
+# FULL_COMPARE=1, its own deadline, and its own staleness alert
+# (DocsMirrorFullStale), so a missed or killed run is seen. It pings the same
+# healthchecks check: a failure pages at once.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: docs-mirror-full
+spec:
+  schedule: "23 3 * * *"          # daily 03:23 UTC (14:23 AEDT): every object compared byte for byte
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 0             # a divergence must fail loudly, not retry quietly
+      activeDeadlineSeconds: 3600     # 8 GiB quota x 2 stores to download
+      ttlSecondsAfterFinished: 7200
+      template:
+        metadata:
+          # marga-docs' NetworkPolicy admits exactly this label from this namespace.
+          labels: {app.kubernetes.io/name: docs-mirror, app.kubernetes.io/part-of: marga}   # same label: same network path
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - {key: node-role.kubernetes.io/control-plane, operator: DoesNotExist}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: mirror
+              image: rclone/rclone:1.71
+              command: ["/bin/sh", "/scripts/docs-mirror.sh"]
+              env:
+                - {name: FULL_COMPARE, value: "1"}
+                - {name: RCLONE_CONFIG, value: /config/rclone.conf}
+                - {name: CA_BUNDLE, value: /config/ca-bundle.crt}
+                - {name: TMPDIR, value: /tmp}
+                - {name: HOME, value: /tmp}
+                - name: HC_URL
+                  valueFrom: {secretKeyRef: {name: docs-mirror, key: HC_URL}}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: ["ALL"]}
+              volumeMounts:
+                - {name: script, mountPath: /scripts, readOnly: true}
+                - {name: config, mountPath: /config, readOnly: true}
+                - {name: tmp, mountPath: /tmp}
+              resources:
+                requests: {cpu: 20m, memory: 64Mi}
+                limits: {memory: 512Mi}
+          volumes:
+            - {name: script, configMap: {name: docs-mirror-script}}
+            - name: config
+              secret:
+                secretName: docs-mirror
+                defaultMode: 0444          # read by uid 65534; holds keys only to the two stores, no document key
+                items:
+                  - {key: rclone.conf, path: rclone.conf}
+                  - {key: ca-bundle.crt, path: ca-bundle.crt}
+            - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 32Mi}}

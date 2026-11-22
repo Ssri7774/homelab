@@ -6,8 +6,10 @@
 # 200 - LAYER2 probe P4).
 #
 # Layout + bucket + keys are a one-time operator step (D3 qc/live/30): bucket
-# marga-documents; key marga-web with read+write on it and NOT owner. D5 adds a
-# docs-mirror-ro key (read only) for the immutable mirror job.
+# marga-documents; key marga-web with read+write on it and NOT owner. D5 adds
+# docs-mirror-ro (READ only) for the write-once mirror job in marga-backup
+# (D5 qc/live/20). Deletes happen only with a just-in-time operator key that
+# ops/docs-store-op.sh imports and deletes again, never a standing one.
 #
 # NOT a readiness dependency of marga-web (DESIGN 2): a store outage degrades
 # uploads, it does not take the CRM out of the Service.

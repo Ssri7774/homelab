@@ -6,10 +6,13 @@
 #            the kubelet, not the pod network, so operator CLI access is
 #            unaffected.)
 #
-# D5 adds ONE more ingress: the docs-mirror job (rclone copy --immutable with
-# the read-only docs-mirror-ro key) -> garage :8443. Nothing else, ever: the
-# app key can delete and overwrite (LAYER2 P10/P11), so the only network
-# peers are the app and the mirror.
+# B-R2-DOCS D5 adds ONE more ingress: from namespace marga-backup, pods
+# labelled docs-mirror (the 5-minute CronJob: rclone copy --immutable with the
+# READ-ONLY docs-mirror-ro key) or docs-op (the short-lived operator Job that
+# ops/docs-store-op.sh creates for a purge, a restore from the mirror or the QC
+# teardown, with a just-in-time key it deletes afterwards). Nothing else, ever:
+# the app key can delete and overwrite (LAYER2 P10/P11), so the only network
+# peers are the app, the mirror and the operator Job.
 #
 # Same enforcement caveat as apps/marga/networkpolicy.yaml: k3s's embedded
 # kube-router enforces these (B-R1-11 qc/live/01 proved it). PORTS ARE POD
@@ -38,5 +41,24 @@ spec:
             matchLabels: {kubernetes.io/metadata.name: marga}
           podSelector:
             matchLabels: {app.kubernetes.io/name: marga-web}
+      ports:
+        - {protocol: TCP, port: 8443}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: garage-ingress-from-docs-mirror
+  labels: {marga.platform/control: b-r2-docs-netpol}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: garage}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: marga-backup}
+          podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/name, operator: In, values: [docs-mirror, docs-op]}
       ports:
         - {protocol: TCP, port: 8443}

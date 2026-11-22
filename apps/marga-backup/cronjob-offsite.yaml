@@ -16,6 +16,19 @@
 #    loudly; an auto-init would start a fresh empty repo and report success.
 #  - Success is reported OUT of the cluster (healthchecks.io), so a dead
 #    cluster, a suspended CronJob or a deleted namespace all go overdue.
+#
+# B-R2-DOCS D5 (design 3a): the documents' write-once mirror (bucket
+# docs-mirror, docs-mirror.yaml) goes offsite in the same snapshot. What
+# leaves AU is restic AES-256 over envelope ciphertext: two layers. Neither the
+# document KEK nor the restic password is in this namespace. Both are in
+# Vault, whose barrier tarball is ALSO on Google Drive (DEV-002 s9), but
+# encrypted under the unseal shares, which are on a separate Microsoft account
+# (and on the Mac). So Drive alone does not open a document; Drive plus that
+# second account does. NEEDS the DEV-002 amendment that
+# names documents (orchestrator + founder) before the first real document.
+# The "offsite" key gains READ on docs-mirror (D5 qc/live/20). docs-mirror may
+# legitimately be empty, so it is not held to the backup.info rule; instead
+# the snapshot must hold exactly as many docs-mirror objects as were pulled.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -79,7 +92,7 @@ spec:
                   R="restic -o rclone.program=/tools/rclone"
                   hc /start
                   ok=1
-                  for b in cnpg-marga cnpg-zitadel; do
+                  for b in cnpg-marga cnpg-zitadel docs-mirror; do
                     /tools/rclone --config "$RCLONE_CONFIG" --ca-cert /config/ca.crt \
                       sync "garage:$b" "/work/$b" --checksum || { echo "FAIL: rclone sync $b"; ok=0; }
                   done
@@ -88,7 +101,14 @@ spec:
                       echo "FAIL: no base backup under /work/$d (empty or missing staging copy)"; ok=0
                     fi
                   done
-                  [ "$ok" = 1 ] && $R backup /work --host marga-backup --tag cnpg || ok=0
+                  mkdir -p /work/docs-mirror   # an empty bucket syncs no directory
+                  [ "$ok" = 1 ] && $R backup /work --host marga-backup --tag cnpg --tag docs || ok=0
+                  if [ "$ok" = 1 ]; then
+                    nw=$(find /work/docs-mirror -type f | wc -l)
+                    ns=$($R ls --host marga-backup --long --recursive latest /work/docs-mirror | grep -c '^-')
+                    echo "docs-mirror objects: pulled $nw, in the snapshot $ns"
+                    [ "$nw" = "$ns" ] || { echo "FAIL: the snapshot does not hold every docs-mirror object"; ok=0; }
+                  fi
                   [ "$ok" = 1 ] && $R forget --host marga-backup --keep-daily 7 --keep-weekly 5 --prune || ok=0
                   [ "$ok" = 1 ] && $R check || ok=0                     # structure, every run
                   if [ "$ok" = 1 ] && [ "$(date -u +%u%H)" = "718" ]; then  # Sunday 18:45 UTC run (runs at 00,06,12,18:45)
@@ -111,4 +131,4 @@ spec:
             - {name: secret, secret: {secretName: offsite-backup}}
             - {name: config, emptyDir: {}}
             - {name: tools, emptyDir: {}}
-            - {name: work, emptyDir: {sizeLimit: 16Gi}}   # >= Garage layout capacity (15G)
+            - {name: work, emptyDir: {sizeLimit: 16Gi}}   # >= Garage layout capacity (15G). D5: docs-mirror now rides here too; see the D5 hand-off (capacity residual)

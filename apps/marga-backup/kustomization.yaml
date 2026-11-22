@@ -8,3 +8,4 @@ resources:
   - garage.yaml                  # PVC + ConfigMaps + Deployment + Service
   - externalsecret-offsite.yaml  # restic key + rclone.conf + healthchecks URL
   - cronjob-offsite.yaml         # Garage -> restic (AES-256) -> Google Drive
+  - docs-mirror.yaml             # B-R2-DOCS D5: write-once mirror of marga-docs + parity alarm

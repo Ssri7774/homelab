@@ -117,3 +117,91 @@ spec:
           annotations:
             summary: "Backup staging store (Garage) is down"
             description: "WAL archiving and base backups for marga and zitadel cannot succeed. kubectl -n marga-backup get pods"
+
+    # B-R2-DOCS D5: the write-once document mirror (apps/marga-backup/docs-mirror.yaml).
+    # healthchecks.io ("Marga docs mirror") pages at once on /fail and on a
+    # missed ping; these are the in-cluster half, into the same Slack route.
+    - name: marga-docs-mirror
+      rules:
+        # The newest docs-mirror Job that FAILED started after the last success:
+        # the mirror is failing NOW - an object in the live store was
+        # overwritten or deleted (parity), or a store is unreachable. Manual
+        # runs (kubectl create job --from=cronjob/docs-mirror docs-mirror-...)
+        # count too. Failed Jobs linger until their TTL, so "a failed Job
+        # exists" alone would keep firing after recovery; comparing with the
+        # last success is what resolves it.
+        - alert: DocsMirrorFailing
+          expr: |
+            max(
+              kube_job_status_start_time{namespace="marga-backup", job_name=~"docs-mirror-([0-9]+|qc-.+|op-.+|smoke-.+)"}
+              * on (namespace, job_name)
+              (max by (namespace, job_name) (kube_job_status_failed{namespace="marga-backup", job_name=~"docs-mirror-([0-9]+|qc-.+|op-.+|smoke-.+)"}) > bool 0)
+            )
+            > max(kube_cronjob_status_last_successful_time{namespace="marga-backup", cronjob="docs-mirror"})
+          for: 5m
+          labels: {severity: critical, notify: slack}
+          annotations:
+            summary: "Document mirror FAILED: the live document store and its write-once mirror diverge, or a store is unreachable"
+            description: "kubectl -n marga-backup logs job/<newest docs-mirror job>. '-' = deleted from the live store (app key?), '*' = overwritten, 'immutable file modified' = an existing object changed. The mirror still holds the originals: restore with ops/docs-store-op.sh restore (D5 runbook)."
+
+        # Not succeeded for an hour (12 missed 5-minute runs): suspended, not
+        # scheduling, or failing in a way the rule above cannot see.
+        - alert: DocsMirrorStale
+          expr: |
+            time() - kube_cronjob_status_last_successful_time{namespace="marga-backup", cronjob="docs-mirror"} > 3600
+          for: 10m
+          labels: {severity: critical, notify: slack}
+          annotations:
+            summary: "Document mirror has not succeeded in over an hour"
+            description: "kubectl -n marga-backup get cronjob docs-mirror (suspended? a purge or QC teardown leaves it suspended only for minutes); newest job logs."
+
+        - alert: DocsMirrorMetricsMissing
+          expr: absent(kube_cronjob_status_last_successful_time{namespace="marga-backup", cronjob="docs-mirror"})
+          for: 2h
+          labels: {severity: critical, notify: slack}
+          annotations:
+            summary: "Cannot see the document mirror job at all"
+            description: "CronJob marga-backup/docs-mirror has never succeeded, was deleted, or kube-state-metrics is down."
+
+        # The daily full byte compare (CronJob docs-mirror-full), on its own:
+        # the 5-minute successes above must not mask a nightly failure.
+        - alert: DocsMirrorFullCompareFailing
+          expr: |
+            max(
+              kube_job_status_start_time{namespace="marga-backup", job_name=~"docs-mirror-full-.+"}
+              * on (namespace, job_name)
+              (max by (namespace, job_name) (kube_job_status_failed{namespace="marga-backup", job_name=~"docs-mirror-full-.+"}) > bool 0)
+            )
+            > max(kube_cronjob_status_last_successful_time{namespace="marga-backup", cronjob="docs-mirror-full"})
+          for: 5m
+          labels: {severity: critical, notify: slack}
+          annotations:
+            summary: "Daily full byte compare of the document mirror FAILED"
+            description: "kubectl -n marga-backup logs job/<newest docs-mirror-full job>. 'byte compare ... DIFFER' = an object in the live store no longer matches the mirror's original (overwritten with forged hash metadata?); a deadline kill = the stores outgrew the 1 h budget."
+
+        - alert: DocsMirrorFullCompareStale
+          expr: |
+            time() - kube_cronjob_status_last_successful_time{namespace="marga-backup", cronjob="docs-mirror-full"} > 26 * 3600
+          for: 10m
+          labels: {severity: critical, notify: slack}
+          annotations:
+            summary: "The document mirror's daily full byte compare has not succeeded in 26h"
+            description: "kubectl -n marga-backup get cronjob docs-mirror-full; newest job logs."
+
+        - alert: DocsMirrorFullCompareMetricsMissing
+          expr: absent(kube_cronjob_status_last_successful_time{namespace="marga-backup", cronjob="docs-mirror-full"})
+          for: 26h
+          labels: {severity: critical, notify: slack}
+          annotations:
+            summary: "Cannot see the document mirror's daily full compare at all"
+            description: "CronJob marga-backup/docs-mirror-full has never succeeded, was deleted, or kube-state-metrics is down."
+
+        - alert: DocsStoreDown
+          expr: |
+            kube_deployment_status_replicas_available{namespace="marga-docs", deployment="garage"} < 1
+            or absent(kube_deployment_status_replicas_available{namespace="marga-docs", deployment="garage"})
+          for: 10m
+          labels: {severity: critical, notify: slack}
+          annotations:
+            summary: "Document store (marga-docs Garage) is down"
+            description: "Uploads and downloads fail and the mirror cannot run. kubectl -n marga-docs get pods"
