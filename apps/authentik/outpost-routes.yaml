@@ -1,0 +1,23 @@
+# Forward-auth callback routes. Every host protected by the
+# authentik-forwardauth Middleware needs its /outpost.goauthentik.io/ path sent
+# to Authentik's embedded outpost (authentik-server), WITHOUT the middleware,
+# or the login redirect loops. Traefik picks the longer path over the app's "/".
+# Add one rule per protected host.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: authentik-outpost-routes
+  namespace: authentik
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: milvus.whatsoever.au          # Attu
+      http:
+        paths:
+          - path: /outpost.goauthentik.io
+            pathType: Prefix
+            backend:
+              service:
+                name: authentik-server
+                port:
+                  number: 80
