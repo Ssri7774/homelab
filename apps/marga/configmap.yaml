@@ -58,7 +58,7 @@ data:
   # QC dummy Practice B ONLY (the fixed id B-R1-16 introduced). Opening it to
   # the real practice (007e5b9c-ccbb-4b4f-84e0-2e6c8473ccc0) is a FOUNDER
   # decision and a one-line change here - no new image.
-  DOCS_UPLOAD_PRACTICES: "00000000-0000-4000-8000-0000000000b0"
+  DOCS_UPLOAD_PRACTICES: "007e5b9c-ccbb-4b4f-84e0-2e6c8473ccc0"
   # Uploads are buffered in memory (the envelope needs the length first): one
   # at a time per pod keeps the worst case inside the memory limit below.
   DOCS_UPLOAD_CONCURRENCY: "1"
