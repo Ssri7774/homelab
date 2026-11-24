@@ -55,12 +55,10 @@ data:
   # Which practices may UPLOAD (lib/doc-upload-policy.ts): comma list of
   # practice ids, "*" for all, empty for none. Opened to the real practice
   # (007e5b9c-...) at the handover, 25 Nov 2026 (d600ba4).
-  # B-R2-UI-signout-allpages: the QC dummy Practice B (00000000-...-0000000000b0,
-  # fixed id) is listed again so live QC can upload into the DUMMY tenant and
-  # never into the real one. B exists only during a QC run (50 seeds it, 70
-  # removes it), so between runs this entry names a practice that does not
-  # exist. Removing it again is a one-line change + rollout restart.
-  DOCS_UPLOAD_PRACTICES: "007e5b9c-ccbb-4b4f-84e0-2e6c8473ccc0,00000000-0000-4000-8000-0000000000b0"
+  # Real practice ONLY. Live QC that needs uploads adds the dummy Practice B
+  # (00000000-0000-4000-8000-0000000000b0) for the run and removes it after
+  # teardown (B-R2-UI-signout-allpages did both, 25 Nov 2026).
+  DOCS_UPLOAD_PRACTICES: "007e5b9c-ccbb-4b4f-84e0-2e6c8473ccc0"
 
   # B-R2-UI-signout-allpages: PDF / JPEG / PNG open INLINE in a tab (no
   # decrypted copy in Downloads). Chrome renders an inline PDF in its own
