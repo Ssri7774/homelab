@@ -33,7 +33,7 @@ spec:
         - alert: PostgresBaseBackupStale
           expr: |
             time() - max by (namespace) (
-              barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace=~"marga|zitadel"}
+              barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace=~"marga|zitadel|authentik"}
             ) > 26 * 3600
           for: 10m
           labels: {severity: critical, notify: slack}
@@ -44,8 +44,8 @@ spec:
         # 2. The newest backup attempt failed (failure newer than last success).
         - alert: PostgresBaseBackupFailed
           expr: |
-            max by (namespace) (barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace=~"marga|zitadel"})
-              > max by (namespace) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace=~"marga|zitadel"})
+            max by (namespace) (barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace=~"marga|zitadel|authentik"})
+              > max by (namespace) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace=~"marga|zitadel|authentik"})
           for: 5m
           labels: {severity: critical, notify: slack}
           annotations:
@@ -58,11 +58,13 @@ spec:
             absent(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="marga"})
             or
             absent(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="zitadel"})
+            or
+            absent(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="authentik"})
           for: 30m
           labels: {severity: critical, notify: slack}
           annotations:
             summary: "Cannot see backup state for a Postgres cluster"
-            description: "No plugin backup metric for marga and/or zitadel for 30m. Treat as NOT backed up until checked (plugin sidecar gone, PodMonitor broken, or no backup ever taken)."
+            description: "No plugin backup metric for marga, zitadel and/or authentik for 30m. Treat as NOT backed up until checked (plugin sidecar gone, PodMonitor broken, or no backup ever taken)."
 
         # 4. WAL archiving failing. With the plugin as archiver this counter is
         #    real (before B-R1-09 it counted pushes to nowhere). Do NOT alert on
@@ -70,7 +72,7 @@ spec:
         #    with no WAL to archive, so age is not a fault signal here.
         - alert: PostgresWalArchivingFailing
           expr: |
-            max by (namespace) (increase(cnpg_pg_stat_archiver_failed_count{namespace=~"marga|zitadel"}[15m])) > 0
+            max by (namespace) (increase(cnpg_pg_stat_archiver_failed_count{namespace=~"marga|zitadel|authentik"}[15m])) > 0
           for: 5m
           labels: {severity: critical, notify: slack}
           annotations:
@@ -82,11 +84,13 @@ spec:
             absent(cnpg_pg_stat_archiver_failed_count{namespace="marga"})
             or
             absent(cnpg_pg_stat_archiver_failed_count{namespace="zitadel"})
+            or
+            absent(cnpg_pg_stat_archiver_failed_count{namespace="authentik"})
           for: 30m
           labels: {severity: critical, notify: slack}
           annotations:
             summary: "Cannot see WAL archiving state for a Postgres cluster"
-            description: "cnpg_pg_stat_archiver_failed_count is missing for marga and/or zitadel, so PostgresWalArchivingFailing can never fire. Check the PodMonitor and the CNPG default monitoring queries."
+            description: "cnpg_pg_stat_archiver_failed_count is missing for marga, zitadel and/or authentik, so PostgresWalArchivingFailing can never fire. Check the PodMonitor and the CNPG default monitoring queries."
 
         # 5. Offsite copy stale. Every 6h, so 7h = one missed run + slack.
         - alert: OffsiteBackupStale

@@ -1,0 +1,44 @@
+# Continuous backup of authentik-pg via the Barman Cloud plugin to the Garage
+# staging store (ns marga-backup, on the Synology). Copied from
+# apps/zitadel/backup.yaml. The Cluster opts in with spec.plugins
+# (postgres-cluster.yaml). Credentials: backup-externalsecret.yaml.
+#
+# Garage key "authentik-pg" is RWO on bucket cnpg-authentik ONLY (verified
+# 24 Nov 2026). NOT shipped offsite: Garage copy only, by decision.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: authentik-pg-store
+  namespace: authentik
+spec:
+  # Homelab IdP config, no Marga client data, so no APP 11.2 tension here.
+  retentionPolicy: "30d"
+  configuration:
+    destinationPath: s3://cnpg-authentik/
+    endpointURL: https://garage.marga-backup.svc
+    endpointCA: {name: authentik-pg-backup-s3, key: ca.crt}
+    s3Credentials:
+      accessKeyId: {name: authentik-pg-backup-s3, key: ACCESS_KEY_ID}
+      secretAccessKey: {name: authentik-pg-backup-s3, key: ACCESS_SECRET_KEY}
+      region: {name: authentik-pg-backup-s3, key: REGION}
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+---
+# Daily base backup. CNPG cron has SIX fields (seconds first), UTC.
+# 15:45 UTC = 02:45 AEDT, 15 min after zitadel-pg's so they don't overlap on Garage.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: authentik-pg-daily
+  namespace: authentik
+spec:
+  schedule: "0 45 15 * * *"
+  immediate: true               # first base backup as soon as this applies
+  backupOwnerReference: self
+  target: primary               # same reason as zitadel: restored PGDATA has no standby.signal
+  cluster: {name: authentik-pg}
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io

@@ -46,6 +46,11 @@ spec:
     limits:
       memory: 512Mi
 
-  # Backups: none yet. Phase 2 = Barman Cloud plugin to Garage, copying
-  # zitadel/backup.yaml (new Garage key + bucket cnpg-authentik). Until then a
-  # lost cluster means re-doing Authentik config, so keep config as blueprints.
+  # Continuous WAL archiving + base backups through the Barman Cloud plugin to
+  # ObjectStore authentik-pg-store (backup.yaml) -> Garage bucket cnpg-authentik.
+  # Adding this rolls the instances: replica first, then a switchover (~20 s).
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: authentik-pg-store

@@ -6,6 +6,7 @@ resources:
   - externalsecret.yaml
   - backup-externalsecret.yaml   # Garage creds for authentik-pg backups (Vault kv/homelab/authentik)
   - postgres-cluster.yaml
+  - backup.yaml                  # ObjectStore + daily ScheduledBackup -> Garage cnpg-authentik
   - podmonitor.yaml
   - helmrepository.yaml
   - helmrelease.yaml
