@@ -37,6 +37,20 @@ spec:
   values:
     replicaCount: 2
 
+    # B-R2-ZITADEL-LOGIN-PIN: core (and, via the chart, its init/setup/cleanup
+    # hook Jobs) never on the control plane. hp-master is the node with the
+    # power-event history, and when it is down the scheduler is down with it, so
+    # nothing can move off it then: the sign-in path must already be on workers.
+    # Same rule as marga-web / marga-pg / zitadel-pg. Workers carry no label, so
+    # exclude the control-plane role rather than require a worker label.
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+
     zitadel:
       # Masterkey from Vault (Secret with key "masterkey"). generate-once.
       masterkeySecretName: zitadel-masterkey
@@ -79,6 +93,28 @@ spec:
     # -> core. Issuer/host unchanged (auth.tail56799c.ts.net).
     login:
       enabled: true
+      # B-R2-ZITADEL-LOGIN-PIN: was 1 replica on hp-master (an hp-master outage
+      # = nobody can sign in to Marga). 2 replicas, never on the control plane,
+      # preferably on different workers; PDB keeps one up through drains.
+      replicaCount: 2
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: zitadel-login   # live label, 24 Nov
+      pdb:
+        enabled: true
+        minAvailable: 1
 
     # No bundled Postgres - we use the dedicated CNPG cluster.
     postgresql:

@@ -21,6 +21,15 @@ spec:
         app.kubernetes.io/name: zitadel-proxy
     spec:
       automountServiceAccountToken: false
+      # B-R2-ZITADEL-LOGIN-PIN: never on the control plane (sign-in path must
+      # survive an hp-master outage; see helmrelease.yaml).
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       securityContext:
         runAsNonRoot: true
         runAsUser: 101                 # nginx-unprivileged
