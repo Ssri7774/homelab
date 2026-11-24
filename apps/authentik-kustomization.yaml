@@ -1,0 +1,30 @@
+# Authentik (homelab SSO) gets its OWN Flux Kustomization so a broken change
+# fails only this reconcile, not cluster-apps (same isolation as zitadel/marga).
+#
+# Scope: homelab SSO only (Forgejo, Grafana, Vault, n8n ...). Zitadel stays
+# Marga's IdP and is untouched by this app.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: authentik
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 10m          # first install runs all DB migrations on startup
+  prune: true
+  wait: true
+  path: ./apps/authentik
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  healthChecks:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: authentik-pg
+      namespace: authentik
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: authentik
+      namespace: authentik

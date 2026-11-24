@@ -1,0 +1,86 @@
+# Ingress default-deny for the authentik namespace. Egress stays open on
+# purpose for now: Authentik legitimately calls out (OAuth/social sources, SMTP,
+# avatar/version checks, k8s API for managed outposts), and a homelab SSO that
+# silently can't send a password-reset mail is worse than the risk. Lock egress
+# down later the same way zitadel/networkpolicy.yaml does.
+#
+#   ingress  traefik (kube-system)  -> authentik-server :9000  (UI, OIDC, forward-auth)
+#   ingress  monitoring             -> server/worker :9300, authentik-pg :9187
+#   ingress  cnpg-system            -> authentik-pg :8000
+#   in-namespace: open (server/worker <-> authentik-pg :5432)
+#
+# Every other app reaches Authentik through https://auth.whatsoever.au, i.e.
+# via Traefik, so their OIDC backchannel needs no extra rule here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: authentik
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: authentik
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-traefik-to-server
+  namespace: authentik
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: authentik
+      app.kubernetes.io/component: server
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: traefik}
+      ports:
+        - {protocol: TCP, port: 9000}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-monitoring
+  namespace: authentik
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: monitoring}
+      ports:
+        - {protocol: TCP, port: 9300}
+        - {protocol: TCP, port: 9187}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cnpg-operator
+  namespace: authentik
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: cnpg.io/cluster, operator: Exists}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: cnpg-system}
+      ports:
+        - {protocol: TCP, port: 8000}

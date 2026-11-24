@@ -1,0 +1,51 @@
+# Dedicated CNPG cluster for Authentik (reuses the operator from B-R1-01).
+# Since 2025.10 Authentik has NO Redis: cache, tasks, websockets and the
+# embedded outpost sessions all live in Postgres, so this is its only backend.
+# Expect ~50% more connections than older Authentik; 100 (PG default) is plenty
+# for 1 server + 1 worker.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: authentik-pg
+  namespace: authentik
+spec:
+  instances: 2                       # HA pair: SSO down = every app's login down
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+  primaryUpdateStrategy: unsupervised
+  primaryUpdateMethod: switchover    # seconds of blip instead of a primary restart
+
+  # The app role IS the owner; Vault holds its password. No superuser needed.
+  enableSuperuserAccess: false
+  bootstrap:
+    initdb:
+      database: authentik
+      owner: authentik
+      encoding: UTF8                 # required since Authentik 2025.8
+      secret:
+        name: authentik-pg-app-credentials
+
+  storage:
+    storageClass: synology-iscsi-ext4  # NOT synology-iscsi-storage (no fstype ->
+    size: 5Gi                          # fsGroup not applied -> initdb EACCES)
+
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: required
+    nodeAffinity:                      # keep off memory-tight hp-master
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+  # Backups: none yet. Phase 2 = Barman Cloud plugin to Garage, copying
+  # zitadel/backup.yaml (new Garage key + bucket cnpg-authentik). Until then a
+  # lost cluster means re-doing Authentik config, so keep config as blueprints.

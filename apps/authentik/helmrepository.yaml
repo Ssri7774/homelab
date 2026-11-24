@@ -1,0 +1,9 @@
+# Kept in the app namespace so the bundle is self-contained (same as zitadel).
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: authentik
+  namespace: authentik
+spec:
+  interval: 24h
+  url: https://charts.goauthentik.io
