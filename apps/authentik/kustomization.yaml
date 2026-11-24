@@ -4,6 +4,7 @@ namespace: authentik
 resources:
   - namespace.yaml
   - externalsecret.yaml
+  - backup-externalsecret.yaml   # Garage creds for authentik-pg backups (Vault kv/homelab/authentik)
   - postgres-cluster.yaml
   - podmonitor.yaml
   - helmrepository.yaml
