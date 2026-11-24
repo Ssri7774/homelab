@@ -11,7 +11,26 @@ spec:
                                      # lighter footprint, then scale up.
   imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
-  primaryUpdateStrategy: unsupervised
+  # B-R2-CORE-PATTERN-fix (F4): SUPERVISED. When an instance needs a rollout
+  # (CNPG operator upgrade, image, plugin, or a restart-requiring Postgres
+  # parameter change), the operator rolls the STANDBY and then WAITS (phase
+  # "Waiting for user action") instead of restarting or switching the live
+  # primary on its own (with `unsupervised` that cost ~5 s of IdP errors on
+  # 22 Nov, B-R2-ZITADEL-HA). Failover on a primary FAILURE is NOT affected:
+  # this governs updates only.
+  # Finish a waiting update with a switchover to the updated standby
+  # (`kubectl cnpg promote`, or the status patch in B-R2-ZITADEL-HA ops/06);
+  # `kubectl cnpg restart` also works for parameter-only changes, never for
+  # image changes. Runbook: build/B-R2-CORE-PATTERN-fix/README.md.
+  # Trade-off: until someone acts, the primary stays on the old pod template,
+  # the Cluster is Ready=False, plugin post-reconcile/status sync is paused,
+  # and the Flux Kustomization goes Not Ready after its health-check timeout
+  # (applies still happen) - that is the signal to act; keep the wait short.
+  # primaryUpdateMethod below only changes BEHAVIOUR in unsupervised mode; it
+  # stays so a revert keeps switchover rather than the CNPG default restart.
+  # Its webhook rule still applies here: never change imageName and
+  # postgresql.parameters in the same commit.
+  primaryUpdateStrategy: supervised
   # B-R1-15: when the primary's pod has to be replaced (CNPG/image/plugin
   # update), promote the already-updated standby and THEN restart the old
   # primary, instead of restarting the primary in place. The CNPG default is
