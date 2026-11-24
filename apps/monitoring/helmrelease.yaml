@@ -18,6 +18,27 @@ spec:
       admin:
         existingSecret: grafana-admin-secret
         passwordKey: admin-password
+      # Authentik SSO (app slug "grafana"). client_id/secret come from the
+      # grafana-oauth Secret (ESO <- Vault kv/grafana) as GF_AUTH_GENERIC_OAUTH_*.
+      # The local admin login stays enabled as break-glass if Authentik is down.
+      envFromSecret: grafana-oauth
+      grafana.ini:
+        server:
+          root_url: https://grafana.whatsoever.au
+        auth:
+          signout_redirect_url: https://auth.whatsoever.au/application/o/grafana/end-session/
+          oauth_auto_login: false
+        auth.generic_oauth:
+          enabled: true
+          name: authentik
+          allow_sign_up: true
+          use_pkce: true
+          scopes: openid profile email entitlements
+          auth_url: https://auth.whatsoever.au/application/o/authorize/
+          token_url: https://auth.whatsoever.au/application/o/token/
+          api_url: https://auth.whatsoever.au/application/o/userinfo/
+          # Authentik application entitlements -> Grafana role; no entitlement = Viewer
+          role_attribute_path: "contains(entitlements[*], 'Grafana Admins') && 'Admin' || contains(entitlements[*], 'Grafana Editors') && 'Editor' || 'Viewer'"
       ingress:
         enabled: true
         ingressClassName: traefik

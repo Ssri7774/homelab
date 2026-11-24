@@ -14,4 +14,5 @@ resources:
   - eso-alerts.yaml
   - backup-alerts.yaml           # B-R1-09: backup failure / staleness / cannot-see
   - grafana-secret.yaml
+  - grafana-oauth-secret.yaml     # Authentik SSO client creds (Vault kv/grafana)
 
