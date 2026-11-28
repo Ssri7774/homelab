@@ -1,0 +1,10 @@
+# API version v1beta3: precheck 28 Nov 2026 (served: v1beta2, v1beta3=storage; no v1). Matches alert.yaml..
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: slack
+spec:
+  type: slack
+  # Incoming webhooks are bound to one channel, so `channel` is not set.
+  secretRef:
+    name: flux-slack-webhook

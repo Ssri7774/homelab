@@ -1,0 +1,10 @@
+# B-R2-FLUX-FORGEJO-AUTH (c): Flux -> Slack alerts for frozen / failing GitOps.
+# Reconciled by its own Flux Kustomization (../flux-notifications-kustomization.yaml)
+# so a broken change here fails only this reconcile, not cluster-apps.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: flux-system
+resources:
+  - externalsecret.yaml   # Slack webhook from Vault kv/slack/flux-webhook (address)
+  - provider.yaml         # Provider/slack
+  - alert.yaml            # Alert/gitops-health (errors) + Alert/gitops-source-recovered (info, GitRepository only)

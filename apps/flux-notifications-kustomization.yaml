@@ -1,0 +1,27 @@
+# B-R2-FLUX-FORGEJO-AUTH (c): isolated Flux Kustomization for the GitOps alerts,
+# same pattern as marga-backup / marga-docs. Listed in apps/kustomization.yaml.
+#
+# Note: if GitRepository/flux-system is frozen, this Kustomization cannot
+# change either - but the Alert/Provider are already in the cluster and keep
+# working, which is the point. They do not depend on the source being healthy.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: flux-notifications
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 3m
+  prune: true
+  wait: true            # waits for the ExternalSecret Ready (Alert/Provider v1beta3 carry no status)
+  path: ./apps/flux-notifications
+  # No dependsOn (precheck 28 Nov): ESO is HelmRelease flux-system/external-secrets
+  # applied by cluster-apps, not a Kustomization, and Kustomization.dependsOn only
+  # takes Kustomizations. Depending on cluster-apps would be circular (it creates
+  # this object). On a rebuild this reconcile simply fails + retries every 1m
+  # until ESO's CRDs exist.
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
