@@ -26,4 +26,4 @@ resources:
 images:
   - name: __IMAGE__
     newName: forgejo.whatsoever.au/ssri7774/marga-platform
-    newTag: e2e50e3dc581aa8573321d05ac3dbee0ab8b7137   # B-R2-UI-branding-favicon-logo (prev 604e8c47bbe516b41a46534e7bd7be583277b1e7, B-R2-UI-signout-allpages)
+    newTag: 050718baec411e7172d30bd5356be13dc80f626e   # B-R2-UI-branding-favicon-logo part 2, sign-in card mark (prev e2e50e3dc581aa8573321d05ac3dbee0ab8b7137, part 1)
