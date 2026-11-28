@@ -33,3 +33,4 @@ resources:
   # B-R2-DOCS D3: isolated Flux Kustomization -> ./apps/marga-docs (the document store).
   - marga-docs-kustomization.yaml
   - authentik-kustomization.yaml
+  - flux-notifications-kustomization.yaml
