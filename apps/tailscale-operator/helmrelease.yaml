@@ -5,17 +5,38 @@ metadata:
   namespace: tailscale
 spec:
   interval: 10m
+  # B-R2-TAILSCALE-OPERATOR: the 8 Aug 2026 install timed out at the 5m default
+  # (operator pod waited ~61m for the ESO Secret operator-oauth) and, with no
+  # retry configured, Flux stalled on it for 112 days. 10m wait + RetryOnFailure
+  # below means a failed install/upgrade is RE-TRIED every 10m (emitting events
+  # each time) instead of stalling silently.
+  timeout: 10m
   chart:
     spec:
       chart: tailscale-operator
-      version: "1.98.x"          # floats on patch; pin exact if you prefer
+      # Pinned EXACT (was "1.98.x"). The operator sets PROXY_IMAGE to its own
+      # version, so a chart bump rolls ts-marga / ts-zitadel (sign-in blip).
+      # Bump deliberately, in a quiet window, never by float.
+      version: "1.98.9"
       sourceRef:
         kind: HelmRepository
         name: tailscale
+  # RetryOnFailure: never remediate. NEVER switch to a remediation strategy of
+  # "uninstall": this chart renders its CRDs as templates, so an uninstall
+  # deletes the tailscale.com CRDs and the IngressClass Marga/Zitadel use.
+  # The controller ALSO uninstalls by itself if you: rename/re-target the release
+  # (releaseName, targetNamespace, storageNamespace, chart name), or delete this
+  # HelmRelease (incl. dropping it from apps/kustomization.yaml - Flux prune is on).
   install:
     crds: CreateReplace
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 10m
   upgrade:
     crds: CreateReplace
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 10m
   # No OAuth creds in values: with oauth.clientId unset the chart uses the
   # pre-existing Secret "operator-oauth" (created by the ExternalSecret above).
   # The operator then provisions ingressClass "tailscale"; Marga's Ingress uses
@@ -23,3 +44,13 @@ spec:
   values:
     operatorConfig:
       hostname: k3s-operator
+      # Keep the operator off the flaky control-plane (hp-master). Workers carry
+      # no worker label, so exclude the control-plane role (same rule as
+      # apps/marga/deployment.yaml). REQUIRED, not preferred.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
